@@ -188,6 +188,8 @@
       <button class="btn" id="clearFeed">Очистить ленту</button>
       <p class="note">Пока звучит перевод, микрофон не слушает, чтобы переводчик не переводил сам себя.</p>
     </div>
+
+    <button class="btn primary" id="doneSheet">Готово</button>
   </div>
 </div>
 
@@ -279,6 +281,7 @@
   }
   $('gear').onclick = openSheet;
   $('closeSheet').onclick = closeSheet;
+  $('doneSheet').onclick = closeSheet;
   $('sheet').onclick = function (e) { if (e.target === $('sheet')) closeSheet(); };
   $('keyLink').onclick = function (e) {
     if (inTg && tg.openLink) { e.preventDefault(); tg.openLink('https://aistudio.google.com/apikey'); }
