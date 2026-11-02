@@ -282,6 +282,18 @@
   function store(k, v) { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { /* ignore */ } }
   function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function getKey() { return load('tg-gemini-key') || ''; }
+
+  // The owner's personal bot button carries the key in the link fragment (#gk=...); save it and drop it from the address
+  (function takeKeyFromLink() {
+    var h = location.hash || '';
+    var m = /(?:^#|&)gk=([^&]+)/.exec(h);
+    if (!m) return;
+    var k = '';
+    try { k = decodeURIComponent(m[1]); } catch (e) { k = ''; }
+    if (/^(AQ\.|AIza)[\w.\-]{20,}$/.test(k)) store('tg-gemini-key', k);
+    var rest = h.replace(/(^#|&)gk=[^&]*/, '$1').replace(/^#&/, '#').replace(/&&/g, '&').replace(/^#$/, '');
+    try { history.replaceState(null, '', location.pathname + location.search + rest); } catch (e) { /* ignore */ }
+  })();
   function getModel() { return load('tg-gemini-model') || DEFAULT_MODEL; }
   var forcePhrase = false; // set for the current run when every live model is at its limit
   function engine() { return forcePhrase ? 'phrase' : (load('tg-engine') || 'live'); }
