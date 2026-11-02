@@ -271,7 +271,8 @@
   ];
   var SENS = { high: 0.008, normal: 0.015, low: 0.03 };
   var DEFAULT_MODEL = 'gemini-flash-lite-latest';
-  var LIVE_MODEL = 'gemini-3.8-live';
+  // Free-tier limits are per model, so when one hits its limit the next one takes over
+  var LIVE_MODELS = ['gemini-3.8-live', 'gemini-3.1-flash-live-preview', 'gemini-2.5-flash-native-audio-latest'];
   var MIRROR_MODEL = 'gemini-3.5-live-translate-preview';
   var TTS_MODEL = 'gemini-3.8-flash-lite-tts';
   var WS_URL = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=';
@@ -280,7 +281,8 @@
   function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function getKey() { return load('tg-gemini-key') || ''; }
   function getModel() { return load('tg-gemini-model') || DEFAULT_MODEL; }
-  function engine() { return load('tg-engine') || 'live'; }
+  var forcePhrase = false; // set for the current run when every live model is at its limit
+  function engine() { return forcePhrase ? 'phrase' : (load('tg-engine') || 'live'); }
 
   // Telegram integration
   if (inTg) {
@@ -419,7 +421,13 @@
     closeSheet();
   };
   function updateHint() {
-    $('hint').textContent = engine() === 'live' ? 'Синхронный перевод живым голосом' : 'Перевод по фразам: собеседнику лучше делать паузы';
+    var t;
+    if (forcePhrase) t = 'Живой режим на лимите Google: перевод по фразам';
+    else if (engine() !== 'live') t = 'Перевод по фразам: собеседнику лучше делать паузы';
+    else if (running && live.modelIdx > 0) t = 'Синхронный перевод, запасная модель ' + live.modelIdx;
+    else t = 'Синхронный перевод живым голосом';
+    if (running && micLabel) t += ' · микрофон: ' + micLabel;
+    $('hint').textContent = t;
   }
 
   // Audio output: one context for capture and playback, created on the first tap (iOS requires a gesture)
@@ -679,7 +687,8 @@
   }
 
   // ===== Synchronous mode: Gemini Live, streaming speech to speech =====
-  var live = { ws: null, open: false, handle: null, retries: 0, reconnecting: false };
+  var live = { ws: null, open: false, handle: null, retries: 0, reconnecting: false, modelIdx: 0 };
+  function isLimit(reason) { return /quota|exhaust|limit|rate|resource/i.test(reason || ''); }
   function liveSys() {
     var l = curLang();
     return 'Ты профессиональная синхронная переводчица с ' + l.from + ' языка на русский язык.\n' +
@@ -703,7 +712,7 @@
       } };
     }
     return { setup: {
-      model: 'models/' + LIVE_MODEL,
+      model: 'models/' + LIVE_MODELS[live.modelIdx],
       generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } },
       systemInstruction: { parts: [{ text: liveSys() }] },
       inputAudioTranscription: {}, outputAudioTranscription: {},
@@ -733,12 +742,48 @@
         live.open = false;
         if (!ready) { reject({ code: 'closed', reason: ev.reason }); return; }
         if (running && !live.reconnecting) {
-          if (ev.reason && /key|quota|exhaust|permission|billing/i.test(ev.reason)) { stop(); toast('Gemini: ' + ev.reason); return; }
+          if (ev.reason && /api key|permission|billing/i.test(ev.reason)) { stop(); toast('Gemini: ' + ev.reason); return; }
+          if (isLimit(ev.reason)) { nextLiveModel(ev.reason); return; }
           liveReconnect();
         }
       };
       ws.onerror = function () { /* handled in onclose */ };
     });
+  }
+  // Connect to the current live model; on a limit, move down the list of models
+  async function liveOpen() {
+    for (;;) {
+      try { await liveConnect(); updateHint(); return; } catch (e) {
+        if (isLimit(e && e.reason) && live.modelIdx < LIVE_MODELS.length - 1) { live.modelIdx++; live.handle = null; continue; }
+        throw e;
+      }
+    }
+  }
+  function nextLiveModel(reason) {
+    var old = live.ws;
+    live.ws = null;
+    live.open = false;
+    try { if (old) { old.onclose = null; old.close(); } } catch (e) { /* ignore */ }
+    if (live.modelIdx < LIVE_MODELS.length - 1) {
+      live.modelIdx++;
+      live.handle = null;
+      toast('Основная модель на лимите. Переключаюсь на запасную.');
+      liveReconnect();
+    } else {
+      toPhraseMode();
+    }
+  }
+  function toPhraseMode() {
+    var old = live.ws;
+    live.ws = null;
+    live.open = false;
+    try { if (old) { old.onclose = null; old.close(); } } catch (e) { /* ignore */ }
+    forcePhrase = true;
+    connecting = false;
+    unlockSpeech();
+    updateHint();
+    setStatus();
+    toast('Живой режим сейчас на лимите Google. Продолжаю переводить по фразам.');
   }
   function liveReconnect() {
     if (live.reconnecting) return;
@@ -748,7 +793,7 @@
     try { if (old) { old.onclose = null; old.close(); } } catch (e) { /* ignore */ }
     connecting = true;
     setStatus();
-    liveConnect().then(function () {
+    liveOpen().then(function () {
       live.reconnecting = false;
       live.retries = 0;
       connecting = false;
@@ -756,18 +801,22 @@
     }).catch(function (e) {
       live.reconnecting = false;
       connecting = false;
+      if (!running) return;
+      if (isLimit(e && e.reason)) { toPhraseMode(); return; }
       live.retries++;
-      if (running && live.retries < 5) setTimeout(liveReconnect, 800 * live.retries);
-      else if (running) { stop(); toast(liveErr(e)); }
+      if (live.retries < 5) setTimeout(liveReconnect, 800 * live.retries);
+      else { stop(); toast(liveErr(e)); }
     });
   }
   function liveErr(e) {
     var r = (e && e.reason) || '';
-    if (/key/i.test(r)) return 'Ключ Gemini не подошёл. Проверьте его в настройках.';
-    if (/quota|exhaust|limit/i.test(r)) return 'Лимит Gemini исчерпан. Попробуйте позже.';
+    if (/api key/i.test(r)) return 'Ключ Gemini не подошёл. Проверьте его в настройках.';
+    if (isLimit(r)) return 'Лимит Gemini исчерпан (' + r + ').';
     if (e && e.code === 'timeout') return 'Gemini не отвечает. Проверьте интернет.';
     return 'Не удалось подключиться к Gemini' + (r ? ': ' + r : '. Проверьте интернет.');
   }
+  // The model sometimes writes service tags such as <no speech> or {pause}; they are not speech
+  function cleanOut(t) { return (t || '').replace(/<[^>]*>|\{[^}]*\}|\[[^\]]*\]/g, '').replace(/\s+/g, ' ').trim(); }
   function liveAudio(data) {
     if (!live.open || !live.ws || live.ws.readyState !== 1) return;
     var pcm = downsample16k(data, actx.sampleRate);
@@ -804,9 +853,12 @@
     if (sc.outputTranscription && sc.outputTranscription.text) {
       var co = outputCard();
       co.ruText += sc.outputTranscription.text;
-      co.ru.textContent = co.ruText.trim();
-      co.ru.className = 'ru';
-      scrollDown();
+      var shown = cleanOut(co.ruText);
+      if (shown) {
+        co.ru.textContent = shown;
+        co.ru.className = 'ru';
+        scrollDown();
+      }
     }
     if (sc.modelTurn && sc.modelTurn.parts) {
       sc.modelTurn.parts.forEach(function (p) {
@@ -821,8 +873,12 @@
       var c = cards.find(function (x) { return !x.done; });
       if (c) {
         c.done = true;
-        if (!c.ruText && !c.srcText) { c.el.remove(); cards.splice(cards.indexOf(c), 1); }
-        else if (!c.ruText) { c.ru.textContent = '—'; }
+        // Nothing translated (silence, noise, Russian speech): drop the card
+        if (!cleanOut(c.ruText)) {
+          c.el.remove();
+          cards.splice(cards.indexOf(c), 1);
+          if (!$('feed').querySelector('.msg')) $('empty').hidden = false;
+        }
       }
       if (cards.length > 60) cards = cards.slice(-60);
     }
@@ -952,14 +1008,19 @@
     if (engine() === 'live') {
       live.handle = null;
       live.retries = 0;
-      try { await liveConnect(); } catch (e) {
+      live.modelIdx = 0;
+      try { await liveOpen(); } catch (e) {
         if (my !== startId) return; // stopped while connecting
-        connecting = false;
-        stream.getTracks().forEach(function (t) { t.stop(); });
-        stream = null;
-        setStatus();
-        toast(liveErr(e));
-        return;
+        if (isLimit(e && e.reason)) {
+          toPhraseMode(); // every live model is at its limit: keep translating phrase by phrase
+        } else {
+          connecting = false;
+          stream.getTracks().forEach(function (t) { t.stop(); });
+          stream = null;
+          setStatus();
+          toast(liveErr(e));
+          return;
+        }
       }
       if (my !== startId) return; // stopped while connecting
     }
@@ -976,7 +1037,7 @@
     $('big').classList.add('live');
     $('big').setAttribute('aria-label', 'Остановить перевод');
     $('big').innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
-    $('hint').textContent = micLabel ? 'Микрофон: ' + micLabel : 'Синхронный перевод живым голосом';
+    updateHint();
     setStatus();
     haptic('medium');
     try { if (inTg) tg.enableClosingConfirmation(); } catch (e) { /* ignore */ }
@@ -986,6 +1047,8 @@
   function stop() {
     startId++;
     running = false;
+    forcePhrase = false;
+    live.modelIdx = 0;
     inSpeech = false;
     connecting = false;
     try { if (proc) proc.disconnect(); if (srcNode) srcNode.disconnect(); } catch (e) { /* ignore */ }
