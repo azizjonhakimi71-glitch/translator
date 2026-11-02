@@ -186,6 +186,7 @@
     <div class="group">
       <h3>Экран</h3>
       <label class="c"><input type="checkbox" id="showSrc"> Показывать оригинал фразы</label>
+      <p class="note">Оригинал в шуме распознаётся с ошибками и может выглядеть как другой язык. На перевод это не влияет.</p>
       <button class="btn" id="clearFeed">Очистить ленту</button>
     </div>
 
@@ -224,6 +225,18 @@
   </div>
 </div>
 
+<div class="sheet" id="langSheet" hidden>
+  <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="langTitle">
+    <div class="sheet-head">
+      <h2 id="langTitle">Другие языки</h2>
+      <button class="icon" id="langClose" aria-label="Закрыть">✕</button>
+    </div>
+    <p class="note">Выберите, с какого языка переводить на русский. Переводчица будет слушать только этот язык.</p>
+    <div class="row" id="langList" style="flex-direction:column"></div>
+    <button class="btn primary" id="langBack">Вернуться к узбекскому</button>
+  </div>
+</div>
+
 <div class="toast" id="toast" hidden role="status"></div>
 
 <script>
@@ -234,15 +247,18 @@
   var inTg = !!(tg && tg.platform && tg.platform !== 'unknown');
   var AC = window.AudioContext || window.webkitAudioContext;
 
+  // Uzbek is the main language; the rest are picked by hand under "Другие языки"
   var LANGS = [
-    { id: 'uz', label: 'Узбекский', where: 'на узбекском языке' },
-    { id: 'auto', label: 'Любой язык', where: 'на любом языке' },
-    { id: 'zh', label: 'Китайский', where: 'на китайском языке' },
-    { id: 'en', label: 'Английский', where: 'на английском языке' },
-    { id: 'tr', label: 'Турецкий', where: 'на турецком языке' },
-    { id: 'tg', label: 'Таджикский', where: 'на таджикском языке' },
-    { id: 'kk', label: 'Казахский', where: 'на казахском языке' },
-    { id: 'ko', label: 'Корейский', where: 'на корейском языке' }
+    { id: 'uz', label: 'Узбекский', from: 'узбекского', where: 'на узбекском языке', script: /[ऀ-෿؀-ۿ一-鿿ışçğüöəİŞÇĞÜÖ]/ },
+    { id: 'zh', label: 'Китайский', from: 'китайского', where: 'на китайском языке' },
+    { id: 'en', label: 'Английский', from: 'английского', where: 'на английском языке' },
+    { id: 'tr', label: 'Турецкий', from: 'турецкого', where: 'на турецком языке' },
+    { id: 'tg', label: 'Таджикский', from: 'таджикского', where: 'на таджикском языке' },
+    { id: 'kk', label: 'Казахский', from: 'казахского', where: 'на казахском языке' },
+    { id: 'ky', label: 'Киргизский', from: 'киргизского', where: 'на киргизском языке' },
+    { id: 'ko', label: 'Корейский', from: 'корейского', where: 'на корейском языке' },
+    { id: 'ar', label: 'Арабский', from: 'арабского', where: 'на арабском языке' },
+    { id: 'de', label: 'Немецкий', from: 'немецкого', where: 'на немецком языке' }
   ];
   var SENS = { high: 0.008, normal: 0.015, low: 0.03 };
   var DEFAULT_MODEL = 'gemini-flash-lite-latest';
@@ -279,29 +295,50 @@
 
   // Languages
   var lang = load('tg-lang') || 'uz';
+  if (!LANGS.some(function (l) { return l.id === lang; })) lang = 'uz';
   function curLang() { return LANGS.find(function (l) { return l.id === lang; }) || LANGS[0]; }
+  function setLang(id) {
+    if (lang === id) return;
+    lang = id;
+    store('tg-lang', lang);
+    recent = [];
+    renderLangs();
+    haptic('light');
+    if (running && engine() === 'live') { live.handle = null; liveReconnect(); }
+  }
   function renderLangs() {
     var box = $('langs');
     box.textContent = '';
-    LANGS.forEach(function (l) {
-      var b = document.createElement('button');
-      b.className = 'chip';
-      b.textContent = l.label;
-      b.setAttribute('aria-pressed', String(l.id === lang));
-      b.onclick = function () {
-        if (lang === l.id) return;
-        lang = l.id;
-        store('tg-lang', lang);
-        recent = [];
-        renderLangs();
-        haptic('light');
-        if (running && engine() === 'live') { live.handle = null; liveReconnect(); }
-      };
-      box.append(b);
-    });
-    var c = curLang();
-    $('sub').textContent = (c.id !== 'auto' ? c.label : 'Любой язык') + ' → русский, в наушники очков';
+    var uzb = document.createElement('button');
+    uzb.className = 'chip';
+    uzb.textContent = 'Узбекский → русский';
+    uzb.setAttribute('aria-pressed', String(lang === 'uz'));
+    uzb.onclick = function () { setLang('uz'); };
+    var other = document.createElement('button');
+    other.className = 'chip';
+    other.textContent = lang === 'uz' ? 'Другие языки ▾' : curLang().label + ' → русский ▾';
+    other.setAttribute('aria-pressed', String(lang !== 'uz'));
+    other.onclick = openLangSheet;
+    box.append(uzb, other);
+    $('sub').textContent = curLang().label + ' → русский, в наушники очков';
   }
+  function openLangSheet() {
+    var list = $('langList');
+    list.textContent = '';
+    LANGS.forEach(function (l) {
+      if (l.id === 'uz') return;
+      var b = document.createElement('button');
+      b.className = 'btn' + (l.id === lang ? ' primary' : '');
+      b.textContent = l.label + ' → русский';
+      b.onclick = function () { setLang(l.id); closeLangSheet(); };
+      list.append(b);
+    });
+    $('langSheet').hidden = false;
+  }
+  function closeLangSheet() { $('langSheet').hidden = true; }
+  $('langSheet').onclick = function (e) { if (e.target === $('langSheet')) closeLangSheet(); };
+  $('langBack').onclick = function () { setLang('uz'); closeLangSheet(); };
+  $('langClose').onclick = closeLangSheet;
 
   // Settings sheet
   function openSheet() {
@@ -358,10 +395,11 @@
   bindSelect('engine', 'tg-engine', 'live', function () { if (running) { stop(); toast('Режим изменён. Нажмите кнопку, чтобы начать.'); } updateHint(); });
   bindSelect('rate', 'tg-rate', '1');
   bindSelect('sens', 'tg-sens', 'normal');
-  $('showSrc').checked = load('tg-showsrc') !== '0';
+  // The original line is off by default: in noise speech recognition often writes it in the wrong language
+  $('showSrc').checked = load('tg-showsrc2') === '1';
   document.body.classList.toggle('hide-src', !$('showSrc').checked);
   $('showSrc').onchange = function () {
-    store('tg-showsrc', $('showSrc').checked ? '1' : '0');
+    store('tg-showsrc2', $('showSrc').checked ? '1' : '0');
     document.body.classList.toggle('hide-src', !$('showSrc').checked);
   };
   $('clearFeed').onclick = function () {
@@ -629,9 +667,16 @@
   // ===== Synchronous mode: Gemini Live, streaming speech to speech =====
   var live = { ws: null, open: false, handle: null, retries: 0, reconnecting: false };
   function liveSys() {
-    return 'Ты профессиональная синхронная переводчица. Собеседник говорит ' + curLang().where +
-      ' (иногда на узбекском, китайском, английском или другом языке). Всё, что ты слышишь, сразу переводи на русский и произноси только перевод, от первого лица говорящего, естественным живым голосом, как живой человек-переводчик. ' +
-      'Переводи точно по смыслу, полностью, ничего не пропускай. Имена, числа и цены передавай точно. Никогда не отвечай на вопросы, не комментируй и ничего не добавляй от себя: только перевод сказанного. Если речь уже на русском или это шум, молчи.';
+    var l = curLang();
+    return 'Ты профессиональная синхронная переводчица с ' + l.from + ' языка на русский язык.\n' +
+      'Собеседник говорит только ' + l.where + '. Воспринимай всю речь, которую слышишь, как речь ' + l.where + ', даже если какие-то слова похожи на другой язык.\n' +
+      'Твоя единственная задача: сразу произносить точный перевод сказанного на русский язык, от первого лица говорящего, естественным живым голосом.\n' +
+      'Строгие правила:\n' +
+      '- Говори только по-русски. Никогда не говори ' + l.where + ', по-английски, на хинди или на любом другом языке.\n' +
+      '- Произноси один перевод. Не повторяй оригинал, не давай несколько вариантов, не добавляй транслитерацию, пояснения и комментарии.\n' +
+      '- Никогда не отвечай на вопросы и не веди разговор от себя: только переводи.\n' +
+      '- Переводи полностью и точно по смыслу. Имена, числа и цены передавай точно.\n' +
+      '- Если сказано по-русски, если речь неразборчива или это шум, молчи.';
   }
   function liveSetup() {
     var voice = load('tg-live-voice') || 'Aoede';
@@ -737,7 +782,9 @@
     if (sc.inputTranscription && sc.inputTranscription.text) {
       var ci = inputCard();
       ci.srcText += sc.inputTranscription.text;
-      ci.src.textContent = ci.srcText.trim();
+      // Speech recognition sometimes writes Uzbek in a foreign script; show the original only when it looks right
+      var bad = curLang().script && curLang().script.test(ci.srcText);
+      ci.src.textContent = bad ? '' : ci.srcText.trim();
       scrollDown();
     }
     if (sc.outputTranscription && sc.outputTranscription.text) {
