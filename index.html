@@ -700,31 +700,59 @@
   function withTimeout(p, ms, code) {
     return Promise.race([p, new Promise(function (_, rej) { setTimeout(function () { rej({ name: code }); }, ms); })]);
   }
+  function isBtMic(d) { return /bluetooth|hands-?free|headset|aimb|glass|airpods|\bbt\b|g2/i.test(d.label || ''); }
+  function isPhoneMic(d) { return !isBtMic(d) && /iphone|built|встро|микрофон|microphone/i.test(d.label || ''); }
+  function trackId(s) { var t = s.getAudioTracks()[0]; return t && t.getSettings ? (t.getSettings().deviceId || '') : ''; }
   async function openMic() {
     var base = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
-    var s = await withTimeout(navigator.mediaDevices.getUserMedia({ audio: base }), 20000, 'MicTimeout');
     var pref = load('tg-mic') || 'phone';
+    var exactLabel = pref.indexOf('label:') === 0 ? pref.slice(6) : '';
+    // Open the remembered iPhone microphone straight away, so iOS asks only once
+    var savedId = pref === 'phone' ? load('tg-mic-id') : '';
+    var s = null;
+    if (savedId) {
+      try { s = await withTimeout(navigator.mediaDevices.getUserMedia({ audio: Object.assign({ deviceId: { exact: savedId } }, base) }), 20000, 'MicTimeout'); } catch (e) { s = null; }
+    }
+    if (!s) s = await withTimeout(navigator.mediaDevices.getUserMedia({ audio: base }), 20000, 'MicTimeout');
     micLabel = (s.getAudioTracks()[0] && s.getAudioTracks()[0].label) || '';
-    if (pref === 'auto') return s;
+    if (pref === 'auto') { fillMics(); return s; }
     try {
       var devs = (await navigator.mediaDevices.enumerateDevices()).filter(function (d) { return d.kind === 'audioinput'; });
-      var isBt = function (d) { return /bluetooth|hands-?free|headset|aimb|glass|airpods|\bbt\b/i.test(d.label); };
-      var want = pref === 'phone'
-        ? (devs.find(function (d) { return !isBt(d) && /iphone|built|встро|микрофон/i.test(d.label); }) || devs.find(function (d) { return !isBt(d) && d.deviceId !== 'default'; }))
-        : devs.find(isBt);
-      var cur = s.getAudioTracks()[0].getSettings ? s.getAudioTracks()[0].getSettings().deviceId : '';
-      // Re-open only when the default is the wrong kind: every extra open can bring another iPhone permission prompt
-      var curIsBt = isBt({ label: micLabel });
-      var alreadyRight = micLabel && (pref === 'phone' ? !curIsBt : curIsBt);
-      if (!alreadyRight && want && want.deviceId && want.deviceId !== cur) {
+      var want = exactLabel
+        ? devs.find(function (d) { return d.label === exactLabel; })
+        : pref === 'phone'
+          ? (devs.find(isPhoneMic) || devs.find(function (d) { return !isBtMic(d) && d.deviceId && d.deviceId !== 'default'; }))
+          : devs.find(isBtMic);
+      // Always switch to the wanted microphone when it is not the one that opened
+      if (want && want.deviceId && want.deviceId !== trackId(s)) {
         // Open the wanted microphone first and only then release the default one, so a failure keeps a working stream
         var s2 = await withTimeout(navigator.mediaDevices.getUserMedia({ audio: Object.assign({ deviceId: { exact: want.deviceId } }, base) }), 8000, 'MicTimeout');
         s.getTracks().forEach(function (t) { t.stop(); });
         s = s2;
         micLabel = want.label || micLabel;
       }
-    } catch (e) { /* keep the default microphone */ }
+      if (pref === 'phone' && want && want.deviceId) store('tg-mic-id', want.deviceId);
+    } catch (e) { /* keep the microphone that opened */ }
+    fillMics();
     return s;
+  }
+  // After permission the real microphone names are known: list each one so a specific microphone can be pinned
+  async function fillMics() {
+    try {
+      var devs = (await navigator.mediaDevices.enumerateDevices()).filter(function (d) { return d.kind === 'audioinput' && d.label; });
+      var sel = $('micPref');
+      Array.prototype.slice.call(sel.querySelectorAll('option[data-dev]')).forEach(function (o) { o.remove(); });
+      devs.forEach(function (d) {
+        var o = document.createElement('option');
+        o.value = 'label:' + d.label;
+        o.textContent = 'Только: ' + d.label;
+        o.setAttribute('data-dev', '1');
+        sel.append(o);
+      });
+      sel.value = load('tg-mic') || 'phone';
+      if (!sel.value) sel.value = 'phone';
+      $('micNote').textContent = 'Сейчас слушает: ' + (micLabel || 'микрофон по умолчанию') + '. Найдено микрофонов: ' + devs.length + '. Звук перевода идёт в очки.';
+    } catch (e) { /* ignore */ }
   }
 
   // Capture
