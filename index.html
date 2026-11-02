@@ -75,6 +75,8 @@
   #big svg { width: 38px; height: 38px; }
   #big.live { background: var(--surface); color: var(--fg); border: 3px solid var(--ok); }
   .hint { font-size: 0.8rem; color: var(--muted); text-align: center; }
+  .errbox { width: 100%; max-width: 520px; background: var(--surface); border: 1px solid var(--err); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+  .errbox p { margin: 0; font-size: 0.92rem; font-weight: 600; }
 
   .toast { position: fixed; left: 16px; right: 16px; bottom: calc(150px + env(safe-area-inset-bottom, 0px)); margin: 0 auto; max-width: 520px; background: var(--fg); color: var(--bg); padding: 12px 14px; border-radius: 12px; font-size: 0.92rem; font-weight: 600; text-align: center; z-index: 30; }
 
@@ -134,6 +136,13 @@
       </button>
     </div>
     <div class="hint" id="hint">Синхронный перевод живым голосом</div>
+    <div class="errbox" id="errBox" hidden role="alert">
+      <p id="errText"></p>
+      <div class="row">
+        <button class="btn primary" id="openSafari">Открыть в Safari</button>
+        <button class="btn" id="errClose">Закрыть</button>
+      </div>
+    </div>
   </footer>
 </div>
 
@@ -613,9 +622,12 @@
 
   // Microphone: prefer the iPhone's own microphone over the glasses
   var micLabel = '';
+  function withTimeout(p, ms, code) {
+    return Promise.race([p, new Promise(function (_, rej) { setTimeout(function () { rej({ name: code }); }, ms); })]);
+  }
   async function openMic() {
     var base = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
-    var s = await navigator.mediaDevices.getUserMedia({ audio: base });
+    var s = await withTimeout(navigator.mediaDevices.getUserMedia({ audio: base }), 20000, 'MicTimeout');
     var pref = load('tg-mic') || 'phone';
     micLabel = (s.getAudioTracks()[0] && s.getAudioTracks()[0].label) || '';
     if (pref === 'auto') return s;
@@ -627,8 +639,10 @@
         : devs.find(isBt);
       var cur = s.getAudioTracks()[0].getSettings ? s.getAudioTracks()[0].getSettings().deviceId : '';
       if (want && want.deviceId && want.deviceId !== cur) {
+        // Open the wanted microphone first and only then release the default one, so a failure keeps a working stream
+        var s2 = await withTimeout(navigator.mediaDevices.getUserMedia({ audio: Object.assign({ deviceId: { exact: want.deviceId } }, base) }), 8000, 'MicTimeout');
         s.getTracks().forEach(function (t) { t.stop(); });
-        s = await navigator.mediaDevices.getUserMedia({ audio: Object.assign({ deviceId: { exact: want.deviceId } }, base) });
+        s = s2;
         micLabel = want.label || micLabel;
       }
     } catch (e) { /* keep the default microphone */ }
@@ -894,23 +908,50 @@
 
   // Start / stop
   var startId = 0;
+  function micProblem(text) {
+    $('errText').textContent = text;
+    $('openSafari').hidden = !inTg;
+    $('errBox').hidden = false;
+  }
+  $('errClose').onclick = function () { $('errBox').hidden = true; };
+  $('openSafari').onclick = function () {
+    var url = location.href.split('#')[0];
+    try { tg.openLink(url, { try_instant_view: false }); } catch (e) { location.href = url; }
+  };
   async function start() {
+    $('errBox').hidden = true;
     if (!getKey()) { openSheet(); toast('Сначала вставьте ключ Gemini и нажмите «Сохранить».'); return; }
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast('Микрофон недоступен в этом приложении.'); return; }
-    var ctx = audioCtx();
-    if (engine() !== 'live') unlockSpeech();
-    try {
-      stream = await openMic();
-    } catch (e) {
-      toast(inTg ? 'Нет доступа к микрофону. Настройки iPhone → Telegram → Микрофон: включите.' : 'Нет доступа к микрофону. Разрешите его в настройках браузера.');
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      micProblem(inTg ? 'Telegram не даёт этой странице микрофон. Откройте переводчик в Safari: там микрофон работает.' : 'Этот браузер не даёт доступ к микрофону. Откройте страницу в Safari.');
       return;
     }
-    if (engine() === 'live') {
-      connecting = true;
+    var ctx = audioCtx();
+    if (engine() !== 'live') unlockSpeech();
+    var my = startId;
+    connecting = true;
+    setStatus();
+    var s;
+    try {
+      s = await openMic();
+    } catch (e) {
+      if (my !== startId) return; // stopped while waiting for the microphone
+      connecting = false;
       setStatus();
+      var n = (e && e.name) || '';
+      if (n === 'NotAllowedError' || n === 'SecurityError') {
+        micProblem(inTg ? 'Нет доступа к микрофону. Включите: Настройки iPhone → Telegram → Микрофон. Если не помогает, откройте переводчик в Safari.' : 'Нет доступа к микрофону. Разрешите его для этого сайта: Настройки iPhone → Safari → Микрофон.');
+      } else if (n === 'MicTimeout') {
+        micProblem('Микрофон не ответил. Закройте и снова откройте переводчик. Если не помогает, откройте его в Safari.');
+      } else {
+        micProblem('Не удалось включить микрофон' + (n ? ' (' + n + ')' : '') + '. Откройте переводчик в Safari.');
+      }
+      return;
+    }
+    if (my !== startId) { s.getTracks().forEach(function (t) { t.stop(); }); return; }
+    stream = s;
+    if (engine() === 'live') {
       live.handle = null;
       live.retries = 0;
-      var my = startId;
       try { await liveConnect(); } catch (e) {
         if (my !== startId) return; // stopped while connecting
         connecting = false;
@@ -921,9 +962,10 @@
         return;
       }
       if (my !== startId) return; // stopped while connecting
-      connecting = false;
     }
-    try { await ctx.resume(); } catch (e) { /* ignore */ }
+    connecting = false;
+    // Never await resume() here: outside the tap iOS can leave that promise pending forever
+    try { if (ctx.state !== 'running') ctx.resume(); } catch (e) { /* ignore */ }
     srcNode = ctx.createMediaStreamSource(stream);
     proc = ctx.createScriptProcessor(4096, 1, 1);
     proc.onaudioprocess = onAudio;
@@ -969,7 +1011,16 @@
     try { if (wake) { wake.release(); wake = null; } } catch (e) { /* ignore */ }
   }
 
-  $('big').onclick = function () { if (running || connecting) stop(); else start(); };
+  $('big').onclick = function () {
+    if (running || connecting) { stop(); return; }
+    // Unlock audio inside the tap itself; iOS only allows it here
+    try { var c = audioCtx(); if (c.state !== 'running') c.resume(); } catch (e) { /* ignore */ }
+    start().catch(function (e) {
+      connecting = false;
+      setStatus();
+      micProblem('Ошибка запуска: ' + ((e && (e.message || e.name)) || 'неизвестная') + '. Откройте переводчик в Safari.');
+    });
+  };
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'visible' && running && navigator.wakeLock) {
       navigator.wakeLock.request('screen').then(function (w) { wake = w; }).catch(function () { /* ignore */ });
