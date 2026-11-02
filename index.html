@@ -40,7 +40,7 @@
   header .t { flex: 1; min-width: 0; }
   header h1 { margin: 0; font-size: 1.2rem; line-height: 1.2; }
   header p { margin: 2px 0 0; font-size: 0.82rem; color: var(--muted); }
-  .icon { width: 42px; height: 42px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); font-size: 1.1rem; cursor: pointer; display: grid; place-items: center; }
+  .icon { width: 42px; height: 42px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); font-size: 1.1rem; cursor: pointer; display: grid; place-items: center; flex: none; }
   .icon svg { width: 22px; height: 22px; }
 
   .langs { display: flex; gap: 8px; overflow-x: auto; padding: 6px 16px 10px; scrollbar-width: none; }
@@ -95,7 +95,9 @@
   .keystate { font-size: 0.85rem; font-weight: 600; }
   .keystate.ok { color: var(--ok); }
   .keystate.bad { color: var(--err); }
-  button:focus-visible, select:focus-visible, input:focus-visible { outline: 3px solid var(--link); outline-offset: 2px; }
+  details.group summary { cursor: pointer; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 700; min-height: 28px; display: flex; align-items: center; }
+  details.group[open] summary { margin-bottom: 4px; }
+  button:focus-visible, select:focus-visible, input:focus-visible, summary:focus-visible { outline: 3px solid var(--link); outline-offset: 2px; }
 </style>
 </head>
 <body>
@@ -119,7 +121,7 @@
         <li>Подключите очки к телефону по Bluetooth.</li>
         <li>Выберите язык собеседника вверху.</li>
         <li>Нажмите кнопку внизу и разрешите микрофон.</li>
-        <li>Собеседник говорит, а русский перевод звучит в очках.</li>
+        <li>Собеседник говорит, а переводчица сразу говорит по-русски в очках.</li>
       </ol>
     </div>
   </main>
@@ -131,7 +133,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v5"/></svg>
       </button>
     </div>
-    <div class="hint" id="hint">Собеседнику лучше говорить фразами, с короткими паузами</div>
+    <div class="hint" id="hint">Синхронный перевод живым голосом</div>
   </footer>
 </div>
 
@@ -140,6 +142,31 @@
     <div class="sheet-head">
       <h2 id="sheetTitle">Настройки</h2>
       <button class="icon" id="closeSheet" aria-label="Закрыть">✕</button>
+    </div>
+
+    <div class="group">
+      <h3>Переводчица</h3>
+      <label class="f">Голос
+        <select id="liveVoice">
+          <option value="Aoede">Аэда: лёгкий, естественный</option>
+          <option value="Kore">Кора: уверенный, чёткий</option>
+          <option value="Leda">Леда: молодой</option>
+          <option value="Despina">Деспина: мягкий</option>
+          <option value="Sulafat">Сулафат: тёплый</option>
+          <option value="Achernar">Ахернар: нежный, тихий</option>
+          <option value="Zephyr">Зефир: яркий</option>
+          <option value="mirror">Голосом собеседника</option>
+        </select>
+      </label>
+      <button class="btn" id="previewVoice">Послушать голос</button>
+      <label class="f">Микрофон
+        <select id="micPref">
+          <option value="phone">Микрофон iPhone (лучше слышит)</option>
+          <option value="glasses">Микрофон очков</option>
+          <option value="auto">Как выберет телефон</option>
+        </select>
+      </label>
+      <p class="note" id="micNote">Звук перевода идёт в очки, а слушает микрофон iPhone. Держите телефон ближе к собеседнику.</p>
     </div>
 
     <div class="group">
@@ -154,14 +181,24 @@
       </div>
       <div class="keystate" id="keystate"></div>
       <p class="note">Ключ хранится только на этом телефоне. Получить ключ: <a href="https://aistudio.google.com/apikey" id="keyLink">aistudio.google.com/apikey</a></p>
-      <label class="f">Модель
-        <input type="text" id="model" autocomplete="off" autocapitalize="off" spellcheck="false">
-      </label>
     </div>
 
     <div class="group">
-      <h3>Голос в наушниках</h3>
-      <label class="f">Голос
+      <h3>Экран</h3>
+      <label class="c"><input type="checkbox" id="showSrc"> Показывать оригинал фразы</label>
+      <button class="btn" id="clearFeed">Очистить ленту</button>
+    </div>
+
+    <details class="group">
+      <summary>Запасной режим</summary>
+      <label class="f">Режим перевода
+        <select id="engine">
+          <option value="live">Синхронный, живой голос (лучший)</option>
+          <option value="phrase">По фразам, голос телефона</option>
+        </select>
+      </label>
+      <p class="note">Режим «По фразам» нужен, только если синхронный не подключается.</p>
+      <label class="f">Голос телефона
         <select id="voice"></select>
       </label>
       <label class="f">Скорость
@@ -169,14 +206,8 @@
           <option value="0.9">Медленно</option>
           <option value="1">Обычно</option>
           <option value="1.15">Быстро</option>
-          <option value="1.3">Очень быстро</option>
         </select>
       </label>
-      <button class="btn" id="testVoice">Проверить голос</button>
-    </div>
-
-    <div class="group">
-      <h3>Микрофон и экран</h3>
       <label class="f">Чувствительность
         <select id="sens">
           <option value="high">Высокая: тихая речь</option>
@@ -184,10 +215,10 @@
           <option value="low">Низкая: шумное место</option>
         </select>
       </label>
-      <label class="c"><input type="checkbox" id="showSrc"> Показывать оригинал фразы</label>
-      <button class="btn" id="clearFeed">Очистить ленту</button>
-      <p class="note">Пока звучит перевод, микрофон не слушает, чтобы переводчик не переводил сам себя.</p>
-    </div>
+      <label class="f">Модель
+        <input type="text" id="model" autocomplete="off" autocapitalize="off" spellcheck="false">
+      </label>
+    </details>
 
     <button class="btn primary" id="doneSheet">Готово</button>
   </div>
@@ -201,6 +232,7 @@
   var $ = function (id) { return document.getElementById(id); };
   var tg = window.Telegram && window.Telegram.WebApp;
   var inTg = !!(tg && tg.platform && tg.platform !== 'unknown');
+  var AC = window.AudioContext || window.webkitAudioContext;
 
   var LANGS = [
     { id: 'uz', label: 'Узбекский', where: 'на узбекском языке' },
@@ -214,11 +246,16 @@
   ];
   var SENS = { high: 0.008, normal: 0.015, low: 0.03 };
   var DEFAULT_MODEL = 'gemini-flash-lite-latest';
+  var LIVE_MODEL = 'gemini-3.8-live';
+  var MIRROR_MODEL = 'gemini-3.5-live-translate-preview';
+  var TTS_MODEL = 'gemini-3.8-flash-lite-tts';
+  var WS_URL = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=';
 
   function store(k, v) { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { /* ignore */ } }
   function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function getKey() { return load('tg-gemini-key') || ''; }
   function getModel() { return load('tg-gemini-model') || DEFAULT_MODEL; }
+  function engine() { return load('tg-engine') || 'live'; }
 
   // Telegram integration
   if (inTg) {
@@ -226,25 +263,23 @@
     try { tg.ready(); tg.expand(); } catch (e) { /* ignore */ }
     try { tg.disableVerticalSwipes(); } catch (e) { /* ignore */ }
     try { tg.setHeaderColor('bg_color'); tg.setBackgroundColor('bg_color'); } catch (e) { /* ignore */ }
-    try {
-      if (tg.SettingsButton) { tg.SettingsButton.show(); tg.SettingsButton.onClick(openSheet); }
-    } catch (e) { /* ignore */ }
+    try { if (tg.SettingsButton) { tg.SettingsButton.show(); tg.SettingsButton.onClick(openSheet); } } catch (e) { /* ignore */ }
   }
   function haptic(kind) {
     try { if (inTg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred(kind || 'light'); } catch (e) { /* ignore */ }
   }
 
-  // Toast
   var toastTimer = null;
   function toast(t) {
     $('toast').textContent = t;
     $('toast').hidden = false;
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { $('toast').hidden = true; }, 3500);
+    toastTimer = setTimeout(function () { $('toast').hidden = true; }, 4000);
   }
 
   // Languages
   var lang = load('tg-lang') || 'uz';
+  function curLang() { return LANGS.find(function (l) { return l.id === lang; }) || LANGS[0]; }
   function renderLangs() {
     var box = $('langs');
     box.textContent = '';
@@ -254,24 +289,26 @@
       b.textContent = l.label;
       b.setAttribute('aria-pressed', String(l.id === lang));
       b.onclick = function () {
+        if (lang === l.id) return;
         lang = l.id;
         store('tg-lang', lang);
         recent = [];
         renderLangs();
         haptic('light');
+        if (running && engine() === 'live') { live.handle = null; liveReconnect(); }
       };
       box.append(b);
     });
-    var cur = LANGS.find(function (l) { return l.id === lang; });
-    $('sub').textContent = (cur && cur.id !== 'auto' ? cur.label : 'Любой язык') + ' → русский, в наушники очков';
+    var c = curLang();
+    $('sub').textContent = (c.id !== 'auto' ? c.label : 'Любой язык') + ' → русский, в наушники очков';
   }
 
   // Settings sheet
   function openSheet() {
     $('key').value = load('tg-gemini-key') || '';
     $('model').value = getModel();
-    $('keystate').className = load('tg-gemini-key') ? 'keystate ok' : 'keystate bad';
-    $('keystate').textContent = load('tg-gemini-key') ? 'Ключ сохранён на этом телефоне.' : 'Ключа нет. Вставьте его один раз и нажмите «Сохранить».';
+    $('keystate').className = getKey() ? 'keystate ok' : 'keystate bad';
+    $('keystate').textContent = getKey() ? 'Ключ сохранён на этом телефоне.' : 'Ключа нет. Вставьте его один раз и нажмите «Сохранить».';
     $('sheet').hidden = false;
     if (inTg && tg.BackButton) { try { tg.BackButton.show(); tg.BackButton.onClick(closeSheet); } catch (e) { /* ignore */ } }
   }
@@ -288,7 +325,6 @@
   };
   $('saveKey').onclick = function () {
     store('tg-gemini-key', $('key').value.trim() || null);
-    store('tg-gemini-model', $('model').value.trim() || null);
     $('keystate').className = 'keystate ok';
     $('keystate').textContent = 'Сохранено.';
     haptic('light');
@@ -301,7 +337,6 @@
   };
   $('testKey').onclick = function () {
     store('tg-gemini-key', $('key').value.trim() || null);
-    store('tg-gemini-model', $('model').value.trim() || null);
     $('keystate').className = 'keystate';
     $('keystate').textContent = 'Проверяю…';
     gemini([{ text: 'Переведи на русский: "Assalomu alaykum, yaxshimisiz?"' }], false).then(function (t) {
@@ -314,10 +349,15 @@
   };
   $('model').onchange = function () { store('tg-gemini-model', $('model').value.trim() || null); };
 
-  $('rate').value = load('tg-rate') || '1';
-  $('rate').onchange = function () { store('tg-rate', $('rate').value); };
-  $('sens').value = load('tg-sens') || 'normal';
-  $('sens').onchange = function () { store('tg-sens', $('sens').value); };
+  function bindSelect(id, key, def, after) {
+    $(id).value = load(key) || def;
+    $(id).onchange = function () { store(key, $(id).value); if (after) after(); };
+  }
+  bindSelect('liveVoice', 'tg-live-voice', 'Aoede', function () { if (running && engine() === 'live') { live.handle = null; liveReconnect(); } });
+  bindSelect('micPref', 'tg-mic', 'phone', function () { if (running) toast('Микрофон сменится при следующем запуске.'); });
+  bindSelect('engine', 'tg-engine', 'live', function () { if (running) { stop(); toast('Режим изменён. Нажмите кнопку, чтобы начать.'); } updateHint(); });
+  bindSelect('rate', 'tg-rate', '1');
+  bindSelect('sens', 'tg-sens', 'normal');
   $('showSrc').checked = load('tg-showsrc') !== '0';
   document.body.classList.toggle('hide-src', !$('showSrc').checked);
   $('showSrc').onchange = function () {
@@ -328,46 +368,112 @@
     Array.prototype.slice.call($('feed').querySelectorAll('.msg')).forEach(function (m) { m.remove(); });
     $('empty').hidden = false;
     recent = [];
+    cards = [];
     closeSheet();
   };
+  function updateHint() {
+    $('hint').textContent = engine() === 'live' ? 'Синхронный перевод живым голосом' : 'Перевод по фразам: собеседнику лучше делать паузы';
+  }
 
-  // Voices
-  var FEMALE = /milena|katya|alena|irina|svetlana|tatyana|anna|elena|yulia|female|женск/i;
+  // Audio output: one context for capture and playback, created on the first tap (iOS requires a gesture)
+  var actx = null;
+  function audioCtx() {
+    if (!actx || actx.state === 'closed') actx = new AC();
+    if (actx.state === 'suspended') { try { actx.resume(); } catch (e) { /* ignore */ } }
+    return actx;
+  }
+  var playNodes = [], playNext = 0;
+  function playBuffer(buf) {
+    var ctx = audioCtx();
+    var src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(ctx.destination);
+    var t = Math.max(ctx.currentTime + 0.04, playNext);
+    src.start(t);
+    playNext = t + buf.duration;
+    playNodes.push(src);
+    src.onended = function () { var i = playNodes.indexOf(src); if (i >= 0) playNodes.splice(i, 1); };
+  }
+  function playPcm16(b64, rate) {
+    var bin = atob(b64), n = bin.length >> 1;
+    var ctx = audioCtx();
+    var buf = ctx.createBuffer(1, n, rate);
+    var ch = buf.getChannelData(0);
+    for (var i = 0; i < n; i++) {
+      var v = bin.charCodeAt(2 * i) | (bin.charCodeAt(2 * i + 1) << 8);
+      if (v >= 0x8000) v -= 0x10000;
+      ch[i] = v / 32768;
+    }
+    playBuffer(buf);
+  }
+  function stopPlayback() {
+    playNodes.forEach(function (n) { try { n.stop(); } catch (e) { /* ignore */ } });
+    playNodes = [];
+    playNext = 0;
+  }
+  function isPlaying() { return !!actx && actx.currentTime < playNext; }
+
+  // Voice preview through the Gemini speech model
+  $('previewVoice').onclick = async function () {
+    var v = $('liveVoice').value;
+    if (v === 'mirror') { toast('В этом режиме переводчица говорит голосом собеседника.'); return; }
+    if (!getKey()) { toast('Сначала сохраните ключ Gemini.'); return; }
+    audioCtx();
+    $('previewVoice').disabled = true;
+    $('previewVoice').textContent = 'Загружаю голос…';
+    try {
+      var body = {
+        contents: [{ parts: [{ text: 'Здравствуйте! Я ваша переводчица. Всё, что скажет собеседник, я сразу переведу на русский.' }] }],
+        generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: v } } } }
+      };
+      var r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + TTS_MODEL + ':generateContent', {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': getKey() }, body: JSON.stringify(body)
+      });
+      if (!r.ok) throw { code: r.status };
+      var d = await r.json();
+      var p = d.candidates[0].content.parts[0].inlineData;
+      if (/wav/i.test(p.mimeType)) {
+        var bin = atob(p.data), arr = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+        var buf = await new Promise(function (res, rej) { audioCtx().decodeAudioData(arr.buffer, res, rej); });
+        playBuffer(buf);
+      } else {
+        var m = /rate=(\d+)/.exec(p.mimeType || '');
+        playPcm16(p.data, m ? +m[1] : 24000);
+      }
+    } catch (e) {
+      toast(e && e.code ? errText(e) : 'Не удалось загрузить голос.');
+    } finally {
+      $('previewVoice').disabled = false;
+      $('previewVoice').textContent = 'Послушать голос';
+    }
+  };
+
+  // System voices (phrase mode only)
+  var FEMALE = /milena|katya|alena|irina|svetlana|tatyana|anna|elena|yulia|female|женск|милена/i;
   function fillVoices() {
     if (!('speechSynthesis' in window)) return;
     var ru = speechSynthesis.getVoices().filter(function (v) { return /^ru/i.test(v.lang); });
     var sel = $('voice');
     sel.textContent = '';
-    if (!ru.length) {
-      var o = document.createElement('option');
-      o.textContent = 'Русский голос по умолчанию';
-      o.value = '';
-      sel.append(o);
-      return;
-    }
+    if (!ru.length) { var o = document.createElement('option'); o.textContent = 'Русский по умолчанию'; o.value = ''; sel.append(o); return; }
     var saved = load('tg-voice');
     var pick = ru.find(function (v) { return v.voiceURI === saved; }) || ru.find(function (v) { return FEMALE.test(v.name); }) || ru[0];
     ru.forEach(function (v) {
       var op = document.createElement('option');
       op.value = v.voiceURI;
-      op.textContent = v.name + (FEMALE.test(v.name) ? ' (женский)' : '');
+      op.textContent = v.name;
       if (v === pick) op.selected = true;
       sel.append(op);
     });
   }
-  if ('speechSynthesis' in window) {
-    fillVoices();
-    speechSynthesis.onvoiceschanged = fillVoices;
-  }
+  if ('speechSynthesis' in window) { fillVoices(); speechSynthesis.onvoiceschanged = fillVoices; }
   $('voice').onchange = function () { store('tg-voice', $('voice').value); };
   function currentVoice() {
     if (!('speechSynthesis' in window)) return null;
-    var all = speechSynthesis.getVoices();
-    var want = $('voice').value;
+    var all = speechSynthesis.getVoices(), want = $('voice').value;
     return all.find(function (v) { return want && v.voiceURI === want; }) || all.find(function (v) { return /^ru/i.test(v.lang) && FEMALE.test(v.name); }) || all.find(function (v) { return /^ru/i.test(v.lang); }) || null;
   }
-
-  // Speech output (goes to whatever the phone plays through, e.g. the glasses over Bluetooth)
   var speaking = 0;
   function unlockSpeech() {
     if (!('speechSynthesis' in window)) return;
@@ -398,20 +504,13 @@
       try { speechSynthesis.speak(u); } catch (e) { finish(); }
     });
   }
-  $('testVoice').onclick = function () {
-    unlockSpeech();
-    speakAsync('Привет! Я ваш переводчик. Перевод будет звучать в наушниках очков.');
-  };
 
-  // Gemini
+  // Gemini text/audio requests (phrase mode and key check)
   var SYS = 'Ты профессиональный синхронный переводчик на русский язык. Переводишь живую речь точно по смыслу, естественным разговорным русским.';
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
   function post(url, key, body) {
-    return fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
-      body: JSON.stringify(body)
-    }).catch(function () { return Promise.reject({ code: 'net' }); });
+    return fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': key }, body: JSON.stringify(body) })
+      .catch(function () { return Promise.reject({ code: 'net' }); });
   }
   async function gemini(parts, json) {
     var key = getKey();
@@ -421,10 +520,7 @@
     if (json) gen.responseMimeType = 'application/json';
     var body = { systemInstruction: { parts: [{ text: SYS }] }, contents: [{ role: 'user', parts: parts }], generationConfig: gen };
     var r = await post(url, key, body);
-    if (r.status === 503 || r.status === 429 || r.status === 500) {
-      await sleep(800);
-      r = await post(url, key, body);
-    }
+    if (r.status === 503 || r.status === 429 || r.status === 500) { await sleep(800); r = await post(url, key, body); }
     if (!r.ok) throw { code: r.status };
     var d = await r.json();
     var p = d && d.candidates && d.candidates[0] && d.candidates[0].content && d.candidates[0].content.parts;
@@ -435,41 +531,24 @@
   function errText(e) {
     var c = e && e.code;
     if (c === 'nokey') return 'Вставьте ключ Gemini в настройках.';
-    if (c === 400) return 'Запрос не принят. Проверьте ключ и название модели.';
-    if (c === 401 || c === 403) return 'Ключ отключён или не подошёл. Вставьте новый ключ в настройках.';
-    if (c === 404) return 'Модель не найдена. Проверьте её название в настройках.';
+    if (c === 400) return 'Запрос не принят. Проверьте ключ.';
+    if (c === 401 || c === 403) return 'Ключ не подошёл. Проверьте его в настройках.';
+    if (c === 404) return 'Модель не найдена.';
     if (c === 429) return 'Лимит запросов исчерпан. Подождите минуту.';
     if (c === 500 || c === 503) return 'Сервер Google перегружен. Повторите через минуту.';
     if (c === 'net') return 'Нет интернета или Google недоступен.';
     return 'Не удалось перевести. Повторите.';
   }
 
-  var recent = [];
-  async function translateAudio(b64) {
-    var cur = LANGS.find(function (l) { return l.id === lang; }) || LANGS[0];
-    var ctxText = recent.length ? '\nПредыдущие фразы разговора (только для контекста):\n' + recent.join('\n') : '';
-    var prompt = 'На аудио короткая фраза живого разговора ' + cur.where + '.\n' +
-      '1. Запиши точно, что сказано, на языке оригинала (поле src).\n' +
-      '2. Переведи на естественный разговорный русский, по смыслу и коротко, как живой переводчик (поле ru). Имена, числа и цены передавай точно.\n' +
-      'Если на аудио только шум или речь неразборчива, верни пустые строки. Если сказано по-русски, верни ru пустым.' + ctxText + '\n' +
-      'Ответ строго JSON: {"src": "...", "ru": "..."}';
-    var t = await gemini([{ text: prompt }, { inlineData: { mimeType: 'audio/wav', data: b64 } }], true);
-    var o;
-    try { o = JSON.parse(t); } catch (e) {
-      var m = t.match(/\{[\s\S]*\}/);
-      o = m ? JSON.parse(m[0]) : { src: '', ru: t };
-    }
-    return { src: String(o.src || '').trim(), ru: String(o.ru || '').trim() };
-  }
-
   // Feed
+  var recent = [], cards = [];
   function timeNow() { return new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
-  function addCard() {
+  function addCard(srcText, ruText) {
     $('empty').hidden = true;
     var el = document.createElement('div');
     el.className = 'msg';
-    var src = document.createElement('div'); src.className = 'src'; src.textContent = 'Распознаю…';
-    var ru = document.createElement('div'); ru.className = 'ru wait'; ru.textContent = 'Перевожу…';
+    var src = document.createElement('div'); src.className = 'src'; src.textContent = srcText;
+    var ru = document.createElement('div'); ru.className = 'ru wait'; ru.textContent = ruText;
     var meta = document.createElement('div'); meta.className = 'meta';
     var tm = document.createElement('span'); tm.className = 'time'; tm.textContent = timeNow();
     var again = document.createElement('button'); again.className = 'again'; again.textContent = 'Повторить'; again.hidden = true;
@@ -477,27 +556,65 @@
     el.append(src, ru, meta);
     $('feed').append(el);
     scrollDown();
-    return { el: el, src: src, ru: ru, again: again };
+    return { el: el, src: src, ru: ru, again: again, srcText: '', ruText: '', done: false };
   }
   function scrollDown() { var f = $('feed'); f.scrollTop = f.scrollHeight; }
 
   // Status
-  var pending = 0, inSpeech = false, running = false;
+  var pending = 0, inSpeech = false, running = false, connecting = false;
   function setStatus() {
     var s = $('status');
+    if (connecting) { s.textContent = 'Подключаюсь…'; s.className = 'status busy'; return; }
     if (!running) { s.textContent = 'Нажмите, чтобы начать'; s.className = 'status'; return; }
-    if (speaking > 0) { s.textContent = 'Говорю перевод'; s.className = 'status busy'; return; }
+    if (speaking > 0 || isPlaying()) { s.textContent = 'Переводчица говорит'; s.className = 'status busy'; return; }
     if (inSpeech) { s.textContent = 'Слышу речь…'; s.className = 'status live'; return; }
     if (pending > 0) { s.textContent = 'Перевожу…'; s.className = 'status busy'; return; }
     s.textContent = 'Слушаю'; s.className = 'status live';
   }
+  setInterval(function () { if (running) setStatus(); }, 300);
 
-  // Audio capture with a simple voice-activity detector: a phrase ends after a short pause
-  var stream = null, actx = null, srcNode = null, proc = null, wake = null;
-  var floor = 0.006, buf = [], preroll = [], speechMs = 0, silenceMs = 0;
-  var SIL_MS = 750, MAX_MS = 12000, MIN_SPEECH_MS = 350, PREROLL_MS = 350;
-  var chain = Promise.resolve();
+  // Microphone: prefer the iPhone's own microphone over the glasses
+  var micLabel = '';
+  async function openMic() {
+    var base = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+    var s = await navigator.mediaDevices.getUserMedia({ audio: base });
+    var pref = load('tg-mic') || 'phone';
+    micLabel = (s.getAudioTracks()[0] && s.getAudioTracks()[0].label) || '';
+    if (pref === 'auto') return s;
+    try {
+      var devs = (await navigator.mediaDevices.enumerateDevices()).filter(function (d) { return d.kind === 'audioinput'; });
+      var isBt = function (d) { return /bluetooth|hands-?free|headset|aimb|glass|airpods|\bbt\b/i.test(d.label); };
+      var want = pref === 'phone'
+        ? (devs.find(function (d) { return !isBt(d) && /iphone|built|встро|микрофон/i.test(d.label); }) || devs.find(function (d) { return !isBt(d) && d.deviceId !== 'default'; }))
+        : devs.find(isBt);
+      var cur = s.getAudioTracks()[0].getSettings ? s.getAudioTracks()[0].getSettings().deviceId : '';
+      if (want && want.deviceId && want.deviceId !== cur) {
+        s.getTracks().forEach(function (t) { t.stop(); });
+        s = await navigator.mediaDevices.getUserMedia({ audio: Object.assign({ deviceId: { exact: want.deviceId } }, base) });
+        micLabel = want.label || micLabel;
+      }
+    } catch (e) { /* keep the default microphone */ }
+    return s;
+  }
 
+  // Capture
+  var stream = null, srcNode = null, proc = null, wake = null;
+  function downsample16k(data, rate) {
+    var ratio = rate / 16000, outLen = Math.floor(data.length / ratio), out = new Int16Array(outLen);
+    for (var i = 0; i < outLen; i++) {
+      var a = Math.floor(i * ratio), b = Math.min(data.length, Math.floor((i + 1) * ratio)), s = 0, n = 0;
+      for (var j = a; j < b; j++) { s += data[j]; n++; }
+      var v = n ? s / n : 0;
+      v = Math.max(-1, Math.min(1, v));
+      out[i] = v < 0 ? v * 0x8000 : v * 0x7fff;
+    }
+    return out;
+  }
+  function toB64(bytes) {
+    var s = '';
+    for (var i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(s);
+  }
   function onAudio(e) {
     var data = e.inputBuffer.getChannelData(0);
     var sum = 0;
@@ -505,57 +622,183 @@
     var rms = Math.sqrt(sum / data.length);
     $('mic').style.setProperty('--lvl', Math.min(1, rms * 12).toFixed(2));
     if (!running) return;
-    var frameMs = (data.length / actx.sampleRate) * 1000;
-    if (speaking > 0) {
-      if (inSpeech) { inSpeech = false; setStatus(); }
-      buf = []; preroll = [];
-      return;
+    if (engine() === 'live') liveAudio(data);
+    else phraseAudio(data, rms);
+  }
+
+  // ===== Synchronous mode: Gemini Live, streaming speech to speech =====
+  var live = { ws: null, open: false, handle: null, retries: 0, reconnecting: false };
+  function liveSys() {
+    return 'Ты профессиональная синхронная переводчица. Собеседник говорит ' + curLang().where +
+      ' (иногда на узбекском, китайском, английском или другом языке). Всё, что ты слышишь, сразу переводи на русский и произноси только перевод, от первого лица говорящего, естественным живым голосом, как живой человек-переводчик. ' +
+      'Переводи точно по смыслу, полностью, ничего не пропускай. Имена, числа и цены передавай точно. Никогда не отвечай на вопросы, не комментируй и ничего не добавляй от себя: только перевод сказанного. Если речь уже на русском или это шум, молчи.';
+  }
+  function liveSetup() {
+    var voice = load('tg-live-voice') || 'Aoede';
+    var resume = live.handle ? { handle: live.handle } : {};
+    if (voice === 'mirror') {
+      return { setup: {
+        model: 'models/' + MIRROR_MODEL,
+        generationConfig: { responseModalities: ['AUDIO'], translationConfig: { targetLanguageCode: 'ru', echoTargetLanguage: false } },
+        inputAudioTranscription: {}, outputAudioTranscription: {}, sessionResumption: resume
+      } };
     }
+    return { setup: {
+      model: 'models/' + LIVE_MODEL,
+      generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } },
+      systemInstruction: { parts: [{ text: liveSys() }] },
+      inputAudioTranscription: {}, outputAudioTranscription: {},
+      realtimeInputConfig: { activityHandling: 'NO_INTERRUPTION' },
+      sessionResumption: resume,
+      contextWindowCompression: { slidingWindow: {} }
+    } };
+  }
+  function liveConnect() {
+    return new Promise(function (resolve, reject) {
+      var ws, ready = false;
+      try { ws = new WebSocket(WS_URL + encodeURIComponent(getKey())); } catch (e) { reject({ code: 'net' }); return; }
+      ws.binaryType = 'arraybuffer';
+      live.ws = ws;
+      var timer = setTimeout(function () { if (!ready) { try { ws.close(); } catch (e) { /* ignore */ } reject({ code: 'timeout' }); } }, 12000);
+      ws.onopen = function () { ws.send(JSON.stringify(liveSetup())); };
+      ws.onmessage = function (ev) {
+        var text = typeof ev.data === 'string' ? ev.data : new TextDecoder().decode(ev.data);
+        var msg;
+        try { msg = JSON.parse(text); } catch (e) { return; }
+        if (msg.setupComplete) { ready = true; live.open = true; clearTimeout(timer); resolve(); return; }
+        if (ws === live.ws) onLiveMessage(msg);
+      };
+      ws.onclose = function (ev) {
+        clearTimeout(timer);
+        if (ws !== live.ws) return;
+        live.open = false;
+        if (!ready) { reject({ code: 'closed', reason: ev.reason }); return; }
+        if (running && !live.reconnecting) {
+          if (ev.reason && /key|quota|exhaust|permission|billing/i.test(ev.reason)) { stop(); toast('Gemini: ' + ev.reason); return; }
+          liveReconnect();
+        }
+      };
+      ws.onerror = function () { /* handled in onclose */ };
+    });
+  }
+  function liveReconnect() {
+    if (live.reconnecting) return;
+    live.reconnecting = true;
+    var old = live.ws;
+    live.ws = null;
+    try { if (old) { old.onclose = null; old.close(); } } catch (e) { /* ignore */ }
+    connecting = true;
+    setStatus();
+    liveConnect().then(function () {
+      live.reconnecting = false;
+      live.retries = 0;
+      connecting = false;
+      setStatus();
+    }).catch(function (e) {
+      live.reconnecting = false;
+      connecting = false;
+      live.retries++;
+      if (running && live.retries < 5) setTimeout(liveReconnect, 800 * live.retries);
+      else if (running) { stop(); toast(liveErr(e)); }
+    });
+  }
+  function liveErr(e) {
+    var r = (e && e.reason) || '';
+    if (/key/i.test(r)) return 'Ключ Gemini не подошёл. Проверьте его в настройках.';
+    if (/quota|exhaust|limit/i.test(r)) return 'Лимит Gemini исчерпан. Попробуйте позже.';
+    if (e && e.code === 'timeout') return 'Gemini не отвечает. Проверьте интернет.';
+    return 'Не удалось подключиться к Gemini' + (r ? ': ' + r : '. Проверьте интернет.');
+  }
+  function liveAudio(data) {
+    if (!live.open || !live.ws || live.ws.readyState !== 1) return;
+    var pcm = downsample16k(data, actx.sampleRate);
+    live.ws.send(JSON.stringify({ realtimeInput: { audio: { data: toB64(new Uint8Array(pcm.buffer)), mimeType: 'audio/pcm;rate=16000' } } }));
+  }
+  // Cards: input text goes to the newest card still waiting for its translation; translation text goes to the oldest unfinished card
+  function inputCard() {
+    var last = cards[cards.length - 1];
+    if (last && !last.done && !last.ruText) return last;
+    var c = addCard('', '…');
+    cards.push(c);
+    return c;
+  }
+  function outputCard() {
+    var c = cards.find(function (x) { return !x.done; });
+    if (!c) { c = addCard('', ''); cards.push(c); }
+    return c;
+  }
+  function onLiveMessage(msg) {
+    if (msg.sessionResumptionUpdate && msg.sessionResumptionUpdate.resumable && msg.sessionResumptionUpdate.newHandle) {
+      live.handle = msg.sessionResumptionUpdate.newHandle;
+    }
+    if (msg.goAway) { liveReconnect(); return; }
+    var sc = msg.serverContent;
+    if (!sc) return;
+    if (sc.inputTranscription && sc.inputTranscription.text) {
+      var ci = inputCard();
+      ci.srcText += sc.inputTranscription.text;
+      ci.src.textContent = ci.srcText.trim();
+      scrollDown();
+    }
+    if (sc.outputTranscription && sc.outputTranscription.text) {
+      var co = outputCard();
+      co.ruText += sc.outputTranscription.text;
+      co.ru.textContent = co.ruText.trim();
+      co.ru.className = 'ru';
+      scrollDown();
+    }
+    if (sc.modelTurn && sc.modelTurn.parts) {
+      sc.modelTurn.parts.forEach(function (p) {
+        if (p.inlineData && p.inlineData.data && /audio/i.test(p.inlineData.mimeType || 'audio')) {
+          var m = /rate=(\d+)/.exec(p.inlineData.mimeType || '');
+          playPcm16(p.inlineData.data, m ? +m[1] : 24000);
+        }
+      });
+    }
+    if (sc.interrupted) stopPlayback();
+    if (sc.turnComplete) {
+      var c = cards.find(function (x) { return !x.done; });
+      if (c) {
+        c.done = true;
+        if (!c.ruText && !c.srcText) { c.el.remove(); cards.splice(cards.indexOf(c), 1); }
+        else if (!c.ruText) { c.ru.textContent = '—'; }
+      }
+      if (cards.length > 60) cards = cards.slice(-60);
+    }
+  }
+
+  // ===== Phrase mode: detect pauses locally, translate each phrase, speak with the phone voice =====
+  var floor = 0.006, buf = [], preroll = [], speechMs = 0, silenceMs = 0;
+  var SIL_MS = 700, MAX_MS = 12000, MIN_SPEECH_MS = 350, PREROLL_MS = 350;
+  var chain = Promise.resolve();
+  function phraseAudio(data, rms) {
+    var frameMs = (data.length / actx.sampleRate) * 1000;
+    if (speaking > 0) { if (inSpeech) { inSpeech = false; } buf = []; preroll = []; return; }
     var thr = Math.max(SENS[load('tg-sens') || 'normal'] || 0.015, floor * 3.2);
     var copy = new Float32Array(data);
     if (!inSpeech) {
       if (rms < thr) floor = floor * 0.95 + rms * 0.05;
       preroll.push(copy);
       while (preroll.length * frameMs > PREROLL_MS) preroll.shift();
-      if (rms > thr) {
-        inSpeech = true;
-        buf = preroll.slice();
-        preroll = [];
-        speechMs = 0;
-        silenceMs = 0;
-        setStatus();
-      }
+      if (rms > thr) { inSpeech = true; buf = preroll.slice(); preroll = []; speechMs = 0; silenceMs = 0; }
     } else {
       buf.push(copy);
       speechMs += frameMs;
       if (rms > thr * 0.8) silenceMs = 0; else silenceMs += frameMs;
       if (silenceMs > SIL_MS || speechMs > MAX_MS) {
-        var chunks = buf;
-        var voiced = speechMs - silenceMs;
+        var chunks = buf, voiced = speechMs - silenceMs;
         inSpeech = false;
         buf = [];
-        setStatus();
         if (voiced > MIN_SPEECH_MS) sendPhrase(chunks, actx.sampleRate);
       }
     }
   }
-
   function toWav(chunks, rate) {
     var len = 0;
     chunks.forEach(function (c) { len += c.length; });
     var merged = new Float32Array(len), off = 0;
     chunks.forEach(function (c) { merged.set(c, off); off += c.length; });
-    var ratio = rate / 16000;
-    var outLen = Math.floor(len / ratio);
-    var pcm = new Int16Array(outLen);
-    for (var i = 0; i < outLen; i++) {
-      var a = Math.floor(i * ratio), b = Math.min(len, Math.floor((i + 1) * ratio));
-      var s = 0, n = 0;
-      for (var j = a; j < b; j++) { s += merged[j]; n++; }
-      var v = n ? s / n : 0;
-      v = Math.max(-1, Math.min(1, v));
-      pcm[i] = v < 0 ? v * 0x8000 : v * 0x7fff;
-    }
+    var pcm = downsample16k(merged, rate);
     var buffer = new ArrayBuffer(44 + pcm.length * 2);
     var view = new DataView(buffer);
     function str(o, t) { for (var k = 0; k < t.length; k++) view.setUint8(o + k, t.charCodeAt(k)); }
@@ -564,22 +807,26 @@
     view.setUint32(24, 16000, true); view.setUint32(28, 32000, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
     str(36, 'data'); view.setUint32(40, pcm.length * 2, true);
     new Int16Array(buffer, 44).set(pcm);
-    return buffer;
+    return new Uint8Array(buffer);
   }
-  function toB64(buffer) {
-    var bytes = new Uint8Array(buffer), s = '';
-    for (var i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-    return btoa(s);
+  async function translateAudio(b64) {
+    var ctxText = recent.length ? '\nПредыдущие фразы разговора (только для контекста):\n' + recent.join('\n') : '';
+    var prompt = 'На аудио короткая фраза живого разговора ' + curLang().where + '.\n' +
+      '1. Запиши точно, что сказано, на языке оригинала (поле src).\n' +
+      '2. Переведи на естественный разговорный русский, по смыслу и коротко, как живой переводчик (поле ru). Имена, числа и цены передавай точно.\n' +
+      'Если на аудио только шум или речь неразборчива, верни пустые строки. Если сказано по-русски, верни ru пустым.' + ctxText + '\n' +
+      'Ответ строго JSON: {"src": "...", "ru": "..."}';
+    var t = await gemini([{ text: prompt }, { inlineData: { mimeType: 'audio/wav', data: b64 } }], true);
+    var o;
+    try { o = JSON.parse(t); } catch (e) { var m = t.match(/\{[\s\S]*\}/); o = m ? JSON.parse(m[0]) : { src: '', ru: t }; }
+    return { src: String(o.src || '').trim(), ru: String(o.ru || '').trim() };
   }
-
   function sendPhrase(chunks, rate) {
-    var card = addCard();
+    var card = addCard('Распознаю…', 'Перевожу…');
     pending++;
-    setStatus();
     var p = translateAudio(toB64(toWav(chunks, rate)));
     p.then(function (res) {
-      if (!res.src && !res.ru) { card.el.remove(); if (!$('feed').querySelector('.msg')) $('empty').hidden = false; return; }
-      if (!res.ru) { card.el.remove(); return; }
+      if (!res.ru) { card.el.remove(); if (!$('feed').querySelector('.msg')) $('empty').hidden = false; return; }
       card.src.textContent = res.src;
       card.ru.textContent = res.ru;
       card.ru.className = 'ru';
@@ -592,39 +839,55 @@
       card.src.textContent = '';
       card.ru.textContent = errText(e);
       card.ru.className = 'ru bad';
-    }).then(function () {
-      pending = Math.max(0, pending - 1);
-      setStatus();
-    });
-    // Speak in the order the phrases were said
+    }).then(function () { pending = Math.max(0, pending - 1); });
     chain = chain.then(function () {
       return p.then(function (res) { if (running && res.ru) return speakAsync(res.ru); }, function () { /* shown on the card */ });
     });
   }
 
+  // Start / stop
+  var startId = 0;
   async function start() {
     if (!getKey()) { openSheet(); toast('Сначала вставьте ключ Gemini и нажмите «Сохранить».'); return; }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast('Микрофон недоступен в этом приложении.'); return; }
-    unlockSpeech();
+    var ctx = audioCtx();
+    if (engine() !== 'live') unlockSpeech();
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+      stream = await openMic();
     } catch (e) {
       toast(inTg ? 'Нет доступа к микрофону. Настройки iPhone → Telegram → Микрофон: включите.' : 'Нет доступа к микрофону. Разрешите его в настройках браузера.');
       return;
     }
-    var AC = window.AudioContext || window.webkitAudioContext;
-    actx = new AC();
-    try { await actx.resume(); } catch (e) { /* ignore */ }
-    srcNode = actx.createMediaStreamSource(stream);
-    proc = actx.createScriptProcessor(4096, 1, 1);
+    if (engine() === 'live') {
+      connecting = true;
+      setStatus();
+      live.handle = null;
+      live.retries = 0;
+      var my = startId;
+      try { await liveConnect(); } catch (e) {
+        if (my !== startId) return; // stopped while connecting
+        connecting = false;
+        stream.getTracks().forEach(function (t) { t.stop(); });
+        stream = null;
+        setStatus();
+        toast(liveErr(e));
+        return;
+      }
+      if (my !== startId) return; // stopped while connecting
+      connecting = false;
+    }
+    try { await ctx.resume(); } catch (e) { /* ignore */ }
+    srcNode = ctx.createMediaStreamSource(stream);
+    proc = ctx.createScriptProcessor(4096, 1, 1);
     proc.onaudioprocess = onAudio;
     srcNode.connect(proc);
-    proc.connect(actx.destination);
+    proc.connect(ctx.destination);
     running = true;
     floor = 0.006; buf = []; preroll = []; inSpeech = false;
     $('big').classList.add('live');
     $('big').setAttribute('aria-label', 'Остановить перевод');
     $('big').innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
+    $('hint').textContent = micLabel ? 'Микрофон: ' + micLabel : 'Синхронный перевод живым голосом';
     setStatus();
     haptic('medium');
     try { if (inTg) tg.enableClosingConfirmation(); } catch (e) { /* ignore */ }
@@ -632,26 +895,34 @@
   }
 
   function stop() {
+    startId++;
     running = false;
     inSpeech = false;
-    try { proc && proc.disconnect(); srcNode && srcNode.disconnect(); } catch (e) { /* ignore */ }
-    try { stream && stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) { /* ignore */ }
-    try { actx && actx.close(); } catch (e) { /* ignore */ }
-    proc = srcNode = stream = actx = null;
+    connecting = false;
+    try { if (proc) proc.disconnect(); if (srcNode) srcNode.disconnect(); } catch (e) { /* ignore */ }
+    try { if (stream) stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) { /* ignore */ }
+    proc = srcNode = stream = null;
+    var ws = live.ws;
+    live.ws = null;
+    live.open = false;
+    try { if (ws) { ws.onclose = null; ws.close(); } } catch (e) { /* ignore */ }
+    stopPlayback();
     try { speechSynthesis.cancel(); } catch (e) { /* ignore */ }
     speaking = 0;
     chain = Promise.resolve();
+    cards.forEach(function (c) { c.done = true; });
     $('mic').style.setProperty('--lvl', 0);
     $('big').classList.remove('live');
     $('big').setAttribute('aria-label', 'Начать перевод');
     $('big').innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v5"/></svg>';
+    updateHint();
     setStatus();
     haptic('light');
     try { if (inTg) tg.disableClosingConfirmation(); } catch (e) { /* ignore */ }
     try { if (wake) { wake.release(); wake = null; } } catch (e) { /* ignore */ }
   }
 
-  $('big').onclick = function () { if (running) stop(); else start(); };
+  $('big').onclick = function () { if (running || connecting) stop(); else start(); };
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'visible' && running && navigator.wakeLock) {
       navigator.wakeLock.request('screen').then(function (w) { wake = w; }).catch(function () { /* ignore */ });
@@ -659,6 +930,7 @@
   });
 
   renderLangs();
+  updateHint();
   setStatus();
   if (!getKey()) $('hint').textContent = 'Сначала откройте настройки (шестерёнка) и вставьте ключ Gemini';
 })();
