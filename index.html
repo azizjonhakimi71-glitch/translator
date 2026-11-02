@@ -156,18 +156,19 @@
 
     <div class="group">
       <h3>Переводчица</h3>
-      <label class="f">Голос
+      <label class="f">Режим и голос
         <select id="liveVoice">
-          <option value="Aoede">Аэда: лёгкий, естественный</option>
-          <option value="Kore">Кора: уверенный, чёткий</option>
-          <option value="Leda">Леда: молодой</option>
-          <option value="Despina">Деспина: мягкий</option>
-          <option value="Sulafat">Сулафат: тёплый</option>
-          <option value="Achernar">Ахернар: нежный, тихий</option>
-          <option value="Zephyr">Зефир: яркий</option>
-          <option value="mirror">Голосом собеседника</option>
+          <option value="mirror">Мгновенный: переводит, пока человек говорит (голос как у собеседника)</option>
+          <option value="Aoede">Женский голос Аэда: переводит после фразы</option>
+          <option value="Kore">Женский голос Кора: переводит после фразы</option>
+          <option value="Leda">Женский голос Леда: переводит после фразы</option>
+          <option value="Despina">Женский голос Деспина: переводит после фразы</option>
+          <option value="Sulafat">Женский голос Сулафат: переводит после фразы</option>
+          <option value="Achernar">Женский голос Ахернар: переводит после фразы</option>
+          <option value="Zephyr">Женский голос Зефир: переводит после фразы</option>
         </select>
       </label>
+      <p class="note" id="voiceNote"></p>
       <button class="btn" id="previewVoice">Послушать голос</button>
       <label class="f">Микрофон
         <select id="micPref">
@@ -445,7 +446,20 @@
     $(id).value = load(key) || def;
     $(id).onchange = function () { store(key, $(id).value); if (after) after(); };
   }
-  bindSelect('liveVoice', 'tg-live-voice', 'Aoede', function () { if (running && engine() === 'live') { live.handle = null; liveReconnect(); } });
+  // The instant interpreter is the default: it translates while the person is still talking and does not drop speech
+  function liveVoice() { return load('tg-live-voice2') || 'mirror'; }
+  function updateVoiceNote() {
+    var instant = $('liveVoice').value === 'mirror';
+    $('voiceNote').textContent = instant
+      ? 'Перевод идёт сразу, с отставанием около 3 секунд, даже если человек говорит долго. Голос похож на голос собеседника.'
+      : 'Женский голос, но перевод начинается только когда человек замолчит. В длинной речи часть может пропасть.';
+    $('previewVoice').hidden = instant;
+  }
+  bindSelect('liveVoice', 'tg-live-voice2', 'mirror', function () {
+    updateVoiceNote();
+    if (running && engine() === 'live') { live.useMirror = liveVoice() === 'mirror'; live.modelIdx = 0; live.handle = null; liveReconnect(); }
+  });
+  updateVoiceNote();
   bindSelect('micPref', 'tg-mic', 'phone', function () { if (running) toast('Микрофон сменится при следующем запуске.'); });
   bindSelect('engine', 'tg-engine', 'live', function () { if (running) { stop(); toast('Режим изменён. Нажмите кнопку, чтобы начать.'); } updateHint(); });
   bindSelect('rate', 'tg-rate', '1');
@@ -468,8 +482,10 @@
     var t;
     if (forcePhrase) t = 'Живой режим на лимите Google: перевод по фразам';
     else if (engine() !== 'live') t = 'Перевод по фразам: собеседнику лучше делать паузы';
-    else if (running && live.modelIdx > 0) t = 'Синхронный перевод, запасная модель ' + live.modelIdx;
-    else t = 'Синхронный перевод живым голосом';
+    else if (running && live.useMirror) t = 'Мгновенный перевод';
+    else if (running && live.modelIdx > 0) t = 'Женский голос, запасная модель ' + live.modelIdx;
+    else if (running) t = 'Женский голос: перевод после каждой фразы';
+    else t = liveVoice() === 'mirror' ? 'Мгновенный перевод' : 'Перевод женским голосом';
     if (running && micLabel) t += ' · микрофон: ' + micLabel;
     $('hint').textContent = t;
   }
@@ -493,24 +509,31 @@
     playNodes.push(src);
     src.onended = function () { var i = playNodes.indexOf(src); if (i >= 0) playNodes.splice(i, 1); };
   }
+  var loudUntil = 0;
   function playPcm16(b64, rate) {
     var bin = atob(b64), n = bin.length >> 1;
     var ctx = audioCtx();
     var buf = ctx.createBuffer(1, n, rate);
-    var ch = buf.getChannelData(0);
+    var ch = buf.getChannelData(0), sum = 0;
     for (var i = 0; i < n; i++) {
       var v = bin.charCodeAt(2 * i) | (bin.charCodeAt(2 * i + 1) << 8);
       if (v >= 0x8000) v -= 0x10000;
       ch[i] = v / 32768;
+      sum += ch[i] * ch[i];
     }
+    var loud = n > 0 && Math.sqrt(sum / n) > 0.01;
+    // The instant interpreter streams silence too; when playback falls behind, skip silent pieces to catch up
+    if (!loud && playNext - ctx.currentTime > 1.0) return;
     playBuffer(buf);
+    if (loud) loudUntil = playNext;
   }
   function stopPlayback() {
     playNodes.forEach(function (n) { try { n.stop(); } catch (e) { /* ignore */ } });
     playNodes = [];
     playNext = 0;
+    loudUntil = 0;
   }
-  function isPlaying() { return !!actx && actx.currentTime < playNext; }
+  function isPlaying() { return !!actx && actx.currentTime < loudUntil; }
 
   // Voice preview through the Gemini speech model
   $('previewVoice').onclick = async function () {
@@ -759,7 +782,7 @@
   }
 
   // ===== Synchronous mode: Gemini Live, streaming speech to speech =====
-  var live = { ws: null, open: false, handle: null, retries: 0, reconnecting: false, modelIdx: 0 };
+  var live = { ws: null, open: false, handle: null, retries: 0, reconnecting: false, modelIdx: 0, useMirror: true };
   function isLimit(reason) { return /quota|exhaust|limit|rate|resource/i.test(reason || ''); }
   function liveSys() {
     var l = curLang();
@@ -774,9 +797,10 @@
       '- Если сказано по-русски, если речь неразборчива или это шум, молчи.';
   }
   function liveSetup() {
-    var voice = load('tg-live-voice') || 'Aoede';
+    var voice = liveVoice();
+    if (voice === 'mirror') voice = 'Aoede'; // female fallback when the instant interpreter is at its limit
     var resume = live.handle ? { handle: live.handle } : {};
-    if (voice === 'mirror') {
+    if (live.useMirror) {
       return { setup: {
         model: 'models/' + MIRROR_MODEL,
         generationConfig: { responseModalities: ['AUDIO'], translationConfig: { targetLanguageCode: 'ru', echoTargetLanguage: false } },
@@ -826,7 +850,10 @@
   async function liveOpen() {
     for (;;) {
       try { await liveConnect(); updateHint(); return; } catch (e) {
-        if (isLimit(e && e.reason) && live.modelIdx < LIVE_MODELS.length - 1) { live.modelIdx++; live.handle = null; continue; }
+        if (isLimit(e && e.reason)) {
+          if (live.useMirror) { live.useMirror = false; live.modelIdx = 0; live.handle = null; continue; }
+          if (live.modelIdx < LIVE_MODELS.length - 1) { live.modelIdx++; live.handle = null; continue; }
+        }
         throw e;
       }
     }
@@ -836,7 +863,13 @@
     live.ws = null;
     live.open = false;
     try { if (old) { old.onclose = null; old.close(); } } catch (e) { /* ignore */ }
-    if (live.modelIdx < LIVE_MODELS.length - 1) {
+    if (live.useMirror) {
+      live.useMirror = false;
+      live.modelIdx = 0;
+      live.handle = null;
+      toast('Мгновенный переводчик на лимите. Переключаюсь на женский голос.');
+      liveReconnect();
+    } else if (live.modelIdx < LIVE_MODELS.length - 1) {
       live.modelIdx++;
       live.handle = null;
       toast('Основная модель на лимите. Переключаюсь на запасную.');
@@ -914,7 +947,18 @@
     if (msg.goAway) { liveReconnect(); return; }
     var sc = msg.serverContent;
     if (!sc) return;
-    if (sc.inputTranscription && sc.inputTranscription.text) {
+    // Instant interpreter: one continuous stream without turns; a new card starts after each finished sentence
+    if (live.useMirror) {
+      if (sc.outputTranscription && sc.outputTranscription.text) {
+        var cm = cards[cards.length - 1];
+        if (!cm || cm.done) { cm = addCard('', ''); cards.push(cm); }
+        cm.ruText += sc.outputTranscription.text;
+        var txt = cleanOut(cm.ruText);
+        if (txt) { cm.ru.textContent = txt; cm.ru.className = 'ru'; scrollDown(); }
+        if (/[.?!…]["»)]?\s*$/.test(txt)) cm.done = true;
+        if (cards.length > 80) cards = cards.slice(-80);
+      }
+    } else if (sc.inputTranscription && sc.inputTranscription.text) {
       var ci = inputCard();
       ci.srcText += sc.inputTranscription.text;
       // Speech recognition sometimes writes Uzbek in a foreign script; show the original only when it looks right
@@ -922,7 +966,7 @@
       ci.src.textContent = bad ? '' : ci.srcText.trim();
       scrollDown();
     }
-    if (sc.outputTranscription && sc.outputTranscription.text) {
+    if (!live.useMirror && sc.outputTranscription && sc.outputTranscription.text) {
       var co = outputCard();
       co.ruText += sc.outputTranscription.text;
       var shown = cleanOut(co.ruText);
@@ -941,7 +985,7 @@
       });
     }
     if (sc.interrupted) stopPlayback();
-    if (sc.turnComplete) {
+    if (sc.turnComplete && !live.useMirror) {
       var c = cards.find(function (x) { return !x.done; });
       if (c) {
         c.done = true;
@@ -1081,6 +1125,7 @@
       live.handle = null;
       live.retries = 0;
       live.modelIdx = 0;
+      live.useMirror = liveVoice() === 'mirror';
       try { await liveOpen(); } catch (e) {
         if (my !== startId) return; // stopped while connecting
         if (isLimit(e && e.reason)) {
