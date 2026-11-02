@@ -690,7 +690,10 @@
         ? (devs.find(function (d) { return !isBt(d) && /iphone|built|встро|микрофон/i.test(d.label); }) || devs.find(function (d) { return !isBt(d) && d.deviceId !== 'default'; }))
         : devs.find(isBt);
       var cur = s.getAudioTracks()[0].getSettings ? s.getAudioTracks()[0].getSettings().deviceId : '';
-      if (want && want.deviceId && want.deviceId !== cur) {
+      // Re-open only when the default is the wrong kind: every extra open can bring another iPhone permission prompt
+      var curIsBt = isBt({ label: micLabel });
+      var alreadyRight = micLabel && (pref === 'phone' ? !curIsBt : curIsBt);
+      if (!alreadyRight && want && want.deviceId && want.deviceId !== cur) {
         // Open the wanted microphone first and only then release the default one, so a failure keeps a working stream
         var s2 = await withTimeout(navigator.mediaDevices.getUserMedia({ audio: Object.assign({ deviceId: { exact: want.deviceId } }, base) }), 8000, 'MicTimeout');
         s.getTracks().forEach(function (t) { t.stop(); });
@@ -703,6 +706,31 @@
 
   // Capture
   var stream = null, srcNode = null, proc = null, wake = null;
+  // iOS asks for the microphone each time a new one is opened, so the stream is kept (muted) between stops
+  var heldMic = null, heldMicPref = '';
+  function micAlive(s) { return !!s && s.getAudioTracks().some(function (t) { return t.readyState === 'live'; }); }
+  async function getMic() {
+    var pref = load('tg-mic') || 'phone';
+    if (micAlive(heldMic) && heldMicPref === pref) {
+      heldMic.getAudioTracks().forEach(function (t) { t.enabled = true; });
+      return heldMic;
+    }
+    if (heldMic) { try { heldMic.getTracks().forEach(function (t) { t.stop(); }); } catch (e) { /* ignore */ } }
+    heldMic = await openMic();
+    heldMicPref = pref;
+    return heldMic;
+  }
+  function releaseMic() {
+    if (heldMic) { try { heldMic.getTracks().forEach(function (t) { t.stop(); }); } catch (e) { /* ignore */ } }
+    heldMic = null;
+  }
+  // Leaving the app (or switching away for long) releases the microphone for real
+  var hideTimer = null;
+  document.addEventListener('visibilitychange', function () {
+    clearTimeout(hideTimer);
+    if (document.visibilityState === 'hidden' && !running) hideTimer = setTimeout(releaseMic, 60000);
+  });
+  window.addEventListener('pagehide', releaseMic);
   function downsample16k(data, rate) {
     var ratio = rate / 16000, outLen = Math.floor(data.length / ratio), out = new Int16Array(outLen);
     for (var i = 0; i < outLen; i++) {
@@ -1032,7 +1060,7 @@
     setStatus();
     var s;
     try {
-      s = await openMic();
+      s = await getMic();
     } catch (e) {
       if (my !== startId) return; // stopped while waiting for the microphone
       connecting = false;
@@ -1047,7 +1075,7 @@
       }
       return;
     }
-    if (my !== startId) { s.getTracks().forEach(function (t) { t.stop(); }); return; }
+    if (my !== startId) { s.getAudioTracks().forEach(function (t) { t.enabled = false; }); return; }
     stream = s;
     if (engine() === 'live') {
       live.handle = null;
@@ -1059,7 +1087,7 @@
           toPhraseMode(); // every live model is at its limit: keep translating phrase by phrase
         } else {
           connecting = false;
-          stream.getTracks().forEach(function (t) { t.stop(); });
+          stream.getAudioTracks().forEach(function (t) { t.enabled = false; });
           stream = null;
           setStatus();
           toast(liveErr(e));
@@ -1096,7 +1124,8 @@
     inSpeech = false;
     connecting = false;
     try { if (proc) proc.disconnect(); if (srcNode) srcNode.disconnect(); } catch (e) { /* ignore */ }
-    try { if (stream) stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) { /* ignore */ }
+    // Mute instead of closing, so the next start does not ask for the microphone again
+    try { if (stream) stream.getAudioTracks().forEach(function (t) { t.enabled = false; }); } catch (e) { /* ignore */ }
     proc = srcNode = stream = null;
     var ws = live.ws;
     live.ws = null;
