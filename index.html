@@ -48,10 +48,6 @@
   .chip { flex: none; font: inherit; font-size: 0.9rem; font-weight: 600; min-height: 38px; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer; }
   .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 
-  .voicebar { display: flex; align-items: center; gap: 6px; padding: 0 16px 10px; }
-  .voicebar span { font-size: 0.85rem; color: var(--muted); margin-right: 2px; }
-  .voicebar .seg { flex: 1; font: inherit; font-size: 0.9rem; font-weight: 600; min-height: 38px; padding: 6px 8px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer; }
-  .voicebar .seg[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
   .feed { flex: 1; min-height: 0; overflow-y: auto; padding: 6px 16px 12px; display: flex; flex-direction: column; gap: 10px; -webkit-overflow-scrolling: touch; }
   .empty { margin: auto 0; color: var(--muted); text-align: center; padding: 20px 8px; }
   .empty b { color: var(--fg); display: block; font-size: 1.05rem; margin-bottom: 8px; }
@@ -120,13 +116,6 @@
 
   <nav class="langs" id="langs" aria-label="Язык собеседника"></nav>
 
-  <div class="voicebar" role="group" aria-label="Голос перевода">
-    <span>Голос:</span>
-    <button class="seg" data-v="auto">Авто</button>
-    <button class="seg" data-v="female">Женский</button>
-    <button class="seg" data-v="male">Мужской</button>
-  </div>
-
   <main class="feed" id="feed" aria-live="polite">
     <div class="empty" id="empty">
       <b>Как пользоваться</b>
@@ -166,32 +155,29 @@
     </div>
 
     <div class="group">
-      <h3>Голос перевода</h3>
-      <label class="f">Кто озвучивает перевод
-        <select id="voiceMode">
-          <option value="auto">Авто: говорит женщина — переводчица, мужчина — переводчик</option>
-          <option value="female">Всегда женский голос</option>
-          <option value="male">Всегда мужской голос</option>
-          <option value="mirror">Копия голоса собеседника</option>
+      <h3>Переводчица</h3>
+      <label class="f">Режим и голос
+        <select id="liveVoice">
+          <option value="mirror">Мгновенный: переводит, пока человек говорит (голос как у собеседника)</option>
+          <option value="Aoede">Женский голос Аэда: переводит после фразы</option>
+          <option value="Kore">Женский голос Кора: переводит после фразы</option>
+          <option value="Leda">Женский голос Леда: переводит после фразы</option>
+          <option value="Despina">Женский голос Деспина: переводит после фразы</option>
+          <option value="Sulafat">Женский голос Сулафат: переводит после фразы</option>
+          <option value="Achernar">Женский голос Ахернар: переводит после фразы</option>
+          <option value="Zephyr">Женский голос Зефир: переводит после фразы</option>
         </select>
       </label>
-      <p class="note">Перевод идёт на ходу, пока человек говорит, с отставанием 3–4 секунды. Пол определяется по высоте голоса собеседника.</p>
-      <div class="row">
-        <button class="btn" id="previewFemale">Послушать женский</button>
-        <button class="btn" id="previewMale">Послушать мужской</button>
-      </div>
-    </div>
-
-    <div class="group">
-      <h3>Микрофон</h3>
-      <label class="f">Какой микрофон слушает
+      <p class="note" id="voiceNote"></p>
+      <button class="btn" id="previewVoice">Послушать голос</button>
+      <label class="f">Микрофон
         <select id="micPref">
           <option value="phone">Микрофон iPhone (лучше слышит)</option>
           <option value="glasses">Микрофон очков</option>
           <option value="auto">Как выберет телефон</option>
         </select>
       </label>
-      <p class="note" id="micNote">Звук перевода идёт в очки, а слушает микрофон iPhone. Держите телефон ближе к собеседнику. После первого запуска здесь появятся все найденные микрофоны.</p>
+      <p class="note" id="micNote">Звук перевода идёт в очки, а слушает микрофон iPhone. Держите телефон ближе к собеседнику.</p>
     </div>
 
     <div class="group">
@@ -274,25 +260,18 @@
   var AC = window.AudioContext || window.webkitAudioContext;
 
   // Uzbek is the main language; the rest are picked by hand under "Другие языки"
-  // instant: Google's live-translate model supports the language (translates while the person talks).
-  // Tajik and Kyrgyz are not in its list, so they go through the general live model, which handles them well.
   var LANGS = [
-    { id: 'uz', label: 'Узбекский', from: 'узбекского', where: 'на узбекском языке', instant: true, script: /[ऀ-෿؀-ۿ一-鿿ışçğüöəİŞÇĞÜÖ]/ },
-    { id: 'tg', label: 'Таджикский', from: 'таджикского', where: 'на таджикском языке', instant: false },
-    { id: 'zh', label: 'Китайский', from: 'китайского', where: 'на китайском языке', instant: true },
-    { id: 'en', label: 'Английский', from: 'английского', where: 'на английском языке', instant: true },
-    { id: 'tr', label: 'Турецкий', from: 'турецкого', where: 'на турецком языке', instant: true },
-    { id: 'kk', label: 'Казахский', from: 'казахского', where: 'на казахском языке', instant: true },
-    { id: 'ky', label: 'Киргизский', from: 'киргизского', where: 'на киргизском языке', instant: false },
-    { id: 'ko', label: 'Корейский', from: 'корейского', where: 'на корейском языке', instant: true },
-    { id: 'ar', label: 'Арабский', from: 'арабского', where: 'на арабском языке', instant: true },
-    { id: 'de', label: 'Немецкий', from: 'немецкого', where: 'на немецком языке', instant: true }
+    { id: 'uz', label: 'Узбекский', from: 'узбекского', where: 'на узбекском языке', script: /[ऀ-෿؀-ۿ一-鿿ışçğüöəİŞÇĞÜÖ]/ },
+    { id: 'zh', label: 'Китайский', from: 'китайского', where: 'на китайском языке' },
+    { id: 'en', label: 'Английский', from: 'английского', where: 'на английском языке' },
+    { id: 'tr', label: 'Турецкий', from: 'турецкого', where: 'на турецком языке' },
+    { id: 'tg', label: 'Таджикский', from: 'таджикского', where: 'на таджикском языке' },
+    { id: 'kk', label: 'Казахский', from: 'казахского', where: 'на казахском языке' },
+    { id: 'ky', label: 'Киргизский', from: 'киргизского', where: 'на киргизском языке' },
+    { id: 'ko', label: 'Корейский', from: 'корейского', where: 'на корейском языке' },
+    { id: 'ar', label: 'Арабский', from: 'арабского', where: 'на арабском языке' },
+    { id: 'de', label: 'Немецкий', from: 'немецкого', where: 'на немецком языке' }
   ];
-  var MAIN_LANGS = ['uz', 'tg'];
-  // Voices that read the finished translation; measured: first sound in about 0.6–0.8 s
-  var VOICE_MODEL = 'gemini-3.1-flash-live-preview';
-  var VOICES = { female: 'Aoede', male: 'Charon' };
-  var VOICE_SYS = 'Ты голос переводчика. Тебе присылают готовый русский текст. Произнеси его вслух дословно, естественным живым голосом, ничего не меняя, не добавляя, не отвечая и не комментируя.';
   var SENS = { high: 0.008, normal: 0.015, low: 0.03 };
   var DEFAULT_MODEL = 'gemini-flash-lite-latest';
   // Free-tier limits are per model, so when one hits its limit the next one takes over
@@ -351,34 +330,29 @@
     recent = [];
     renderLangs();
     haptic('light');
-    if (running && engine() === 'live') { live.useTranslate = curLang().instant; live.modelIdx = 0; live.handle = null; liveReconnect(); }
+    if (running && engine() === 'live') { live.handle = null; liveReconnect(); }
   }
   function renderLangs() {
     var box = $('langs');
     box.textContent = '';
-    MAIN_LANGS.forEach(function (id) {
-      var l = LANGS.find(function (x) { return x.id === id; });
-      var b = document.createElement('button');
-      b.className = 'chip';
-      b.textContent = l.label;
-      b.setAttribute('aria-pressed', String(lang === id));
-      b.onclick = function () { setLang(id); };
-      box.append(b);
-    });
-    var isMain = MAIN_LANGS.indexOf(lang) >= 0;
+    var uzb = document.createElement('button');
+    uzb.className = 'chip';
+    uzb.textContent = 'Узбекский → русский';
+    uzb.setAttribute('aria-pressed', String(lang === 'uz'));
+    uzb.onclick = function () { setLang('uz'); };
     var other = document.createElement('button');
     other.className = 'chip';
-    other.textContent = isMain ? 'Другие языки ▾' : curLang().label + ' ▾';
-    other.setAttribute('aria-pressed', String(!isMain));
+    other.textContent = lang === 'uz' ? 'Другие языки ▾' : curLang().label + ' → русский ▾';
+    other.setAttribute('aria-pressed', String(lang !== 'uz'));
     other.onclick = openLangSheet;
-    box.append(other);
+    box.append(uzb, other);
     $('sub').textContent = curLang().label + ' → русский, в наушники очков';
   }
   function openLangSheet() {
     var list = $('langList');
     list.textContent = '';
     LANGS.forEach(function (l) {
-      if (MAIN_LANGS.indexOf(l.id) >= 0) return;
+      if (l.id === 'uz') return;
       var b = document.createElement('button');
       b.className = 'btn' + (l.id === lang ? ' primary' : '');
       b.textContent = l.label + ' → русский';
@@ -472,29 +446,20 @@
     $(id).value = load(key) || def;
     $(id).onchange = function () { store(key, $(id).value); if (after) after(); };
   }
-  // Who speaks the translation: auto picks a female or male voice from the speaker's pitch
-  function voiceMode() { return load('tg-voice-mode') || 'auto'; }
-  // The same choice is on the main screen (Авто / Женский / Мужской) and in settings
-  function applyVoiceMode() {
-    $('voiceMode').value = voiceMode();
-    Array.prototype.forEach.call(document.querySelectorAll('.voicebar .seg'), function (b) {
-      b.setAttribute('aria-pressed', String(b.getAttribute('data-v') === voiceMode()));
-    });
-    if (running && engine() === 'live') {
-      live.speakDirect = voiceMode() === 'mirror';
-      sayQueue = []; sayBuf = '';
-      if (!live.speakDirect) warmVoices();
-    }
-    updateHint();
+  // The instant interpreter is the default: it translates while the person is still talking and does not drop speech
+  function liveVoice() { return load('tg-live-voice2') || 'mirror'; }
+  function updateVoiceNote() {
+    var instant = $('liveVoice').value === 'mirror';
+    $('voiceNote').textContent = instant
+      ? 'Перевод идёт сразу, с отставанием около 3 секунд, даже если человек говорит долго. Голос похож на голос собеседника.'
+      : 'Женский голос, но перевод начинается только когда человек замолчит. В длинной речи часть может пропасть.';
+    $('previewVoice').hidden = instant;
   }
-  bindSelect('voiceMode', 'tg-voice-mode', 'auto', applyVoiceMode);
-  Array.prototype.forEach.call(document.querySelectorAll('.voicebar .seg'), function (b) {
-    b.onclick = function () {
-      store('tg-voice-mode', b.getAttribute('data-v'));
-      applyVoiceMode();
-      haptic('light');
-    };
+  bindSelect('liveVoice', 'tg-live-voice2', 'mirror', function () {
+    updateVoiceNote();
+    if (running && engine() === 'live') { live.useMirror = liveVoice() === 'mirror'; live.modelIdx = 0; live.handle = null; liveReconnect(); }
   });
+  updateVoiceNote();
   bindSelect('micPref', 'tg-mic', 'phone', function () { if (running) toast('Микрофон сменится при следующем запуске.'); });
   bindSelect('engine', 'tg-engine', 'live', function () { if (running) { stop(); toast('Режим изменён. Нажмите кнопку, чтобы начать.'); } updateHint(); });
   bindSelect('rate', 'tg-rate', '1');
@@ -517,12 +482,10 @@
     var t;
     if (forcePhrase) t = 'Живой режим на лимите Google: перевод по фразам';
     else if (engine() !== 'live') t = 'Перевод по фразам: собеседнику лучше делать паузы';
-    else {
-      var vm = voiceMode();
-      var who = vm === 'auto' ? 'голос по полу собеседника' : vm === 'female' ? 'женский голос' : vm === 'male' ? 'мужской голос' : 'копия голоса';
-      var how = (running ? live.useTranslate : curLang().instant) ? 'Перевод на ходу' : 'Перевод после каждой фразы';
-      t = how + ', ' + who + (running && live.modelIdx > 0 ? ', запасная модель' : '');
-    }
+    else if (running && live.useMirror) t = 'Мгновенный перевод';
+    else if (running && live.modelIdx > 0) t = 'Женский голос, запасная модель ' + live.modelIdx;
+    else if (running) t = 'Женский голос: перевод после каждой фразы';
+    else t = liveVoice() === 'mirror' ? 'Мгновенный перевод' : 'Перевод женским голосом';
     if (running && micLabel) t += ' · микрофон: ' + micLabel;
     $('hint').textContent = t;
   }
@@ -573,18 +536,16 @@
   function isPlaying() { return !!actx && actx.currentTime < loudUntil; }
 
   // Voice preview through the Gemini speech model
-  $('previewFemale').onclick = function () { previewVoice('female', this); };
-  $('previewMale').onclick = function () { previewVoice('male', this); };
-  async function previewVoice(g, btn) {
-    var v = VOICES[g];
+  $('previewVoice').onclick = async function () {
+    var v = $('liveVoice').value;
+    if (v === 'mirror') { toast('В этом режиме переводчица говорит голосом собеседника.'); return; }
     if (!getKey()) { toast('Сначала сохраните ключ Gemini.'); return; }
     audioCtx();
-    var label = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = 'Загружаю…';
+    $('previewVoice').disabled = true;
+    $('previewVoice').textContent = 'Загружаю голос…';
     try {
       var body = {
-        contents: [{ parts: [{ text: g === 'female' ? 'Здравствуйте! Я ваша переводчица. Когда говорит женщина, перевод звучит моим голосом.' : 'Здравствуйте! Я ваш переводчик. Когда говорит мужчина, перевод звучит моим голосом.' }] }],
+        contents: [{ parts: [{ text: 'Здравствуйте! Я ваша переводчица. Всё, что скажет собеседник, я сразу переведу на русский.' }] }],
         generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: v } } } }
       };
       var r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + TTS_MODEL + ':generateContent', {
@@ -605,10 +566,10 @@
     } catch (e) {
       toast(e && e.code ? errText(e) : 'Не удалось загрузить голос.');
     } finally {
-      btn.disabled = false;
-      btn.textContent = label;
+      $('previewVoice').disabled = false;
+      $('previewVoice').textContent = 'Послушать голос';
     }
-  }
+  };
 
   // System voices (phrase mode only)
   var FEMALE = /milena|katya|alena|irina|svetlana|tatyana|anna|elena|yulia|female|женск|милена/i;
@@ -727,7 +688,7 @@
     var s = $('status');
     if (connecting) { s.textContent = 'Подключаюсь…'; s.className = 'status busy'; return; }
     if (!running) { s.textContent = 'Нажмите, чтобы начать'; s.className = 'status'; return; }
-    if (speaking > 0 || isPlaying()) { s.textContent = lastSpoken === 'male' ? 'Переводчик говорит' : 'Переводчица говорит'; s.className = 'status busy'; return; }
+    if (speaking > 0 || isPlaying()) { s.textContent = 'Переводчица говорит'; s.className = 'status busy'; return; }
     if (inSpeech) { s.textContent = 'Слышу речь…'; s.className = 'status live'; return; }
     if (pending > 0) { s.textContent = 'Перевожу…'; s.className = 'status busy'; return; }
     s.textContent = 'Слушаю'; s.className = 'status live';
@@ -748,16 +709,13 @@
     try {
       var devs = (await navigator.mediaDevices.enumerateDevices()).filter(function (d) { return d.kind === 'audioinput'; });
       var isBt = function (d) { return /bluetooth|hands-?free|headset|aimb|glass|airpods|\bbt\b/i.test(d.label); };
-      var exactLabel = pref.indexOf('label:') === 0 ? pref.slice(6) : '';
-      var want = exactLabel
-        ? devs.find(function (d) { return d.label === exactLabel; })
-        : pref === 'phone'
-          ? (devs.find(function (d) { return !isBt(d) && /iphone|built|встро|микрофон/i.test(d.label); }) || devs.find(function (d) { return !isBt(d) && d.deviceId !== 'default'; }))
-          : devs.find(isBt);
+      var want = pref === 'phone'
+        ? (devs.find(function (d) { return !isBt(d) && /iphone|built|встро|микрофон/i.test(d.label); }) || devs.find(function (d) { return !isBt(d) && d.deviceId !== 'default'; }))
+        : devs.find(isBt);
       var cur = s.getAudioTracks()[0].getSettings ? s.getAudioTracks()[0].getSettings().deviceId : '';
       // Re-open only when the default is the wrong kind: every extra open can bring another iPhone permission prompt
       var curIsBt = isBt({ label: micLabel });
-      var alreadyRight = micLabel && (exactLabel ? micLabel === exactLabel : pref === 'phone' ? !curIsBt : curIsBt);
+      var alreadyRight = micLabel && (pref === 'phone' ? !curIsBt : curIsBt);
       if (!alreadyRight && want && want.deviceId && want.deviceId !== cur) {
         // Open the wanted microphone first and only then release the default one, so a failure keeps a working stream
         var s2 = await withTimeout(navigator.mediaDevices.getUserMedia({ audio: Object.assign({ deviceId: { exact: want.deviceId } }, base) }), 8000, 'MicTimeout');
@@ -766,26 +724,7 @@
         micLabel = want.label || micLabel;
       }
     } catch (e) { /* keep the default microphone */ }
-    fillMics();
     return s;
-  }
-  // After permission the real microphone names are known: list each one so a specific microphone can be pinned
-  async function fillMics() {
-    try {
-      var devs = (await navigator.mediaDevices.enumerateDevices()).filter(function (d) { return d.kind === 'audioinput' && d.label; });
-      var sel = $('micPref');
-      Array.prototype.slice.call(sel.querySelectorAll('option[data-dev]')).forEach(function (o) { o.remove(); });
-      devs.forEach(function (d) {
-        var o = document.createElement('option');
-        o.value = 'label:' + d.label;
-        o.textContent = 'Только: ' + d.label;
-        o.setAttribute('data-dev', '1');
-        sel.append(o);
-      });
-      sel.value = load('tg-mic') || 'phone';
-      if (!sel.value) sel.value = 'phone';
-      $('micNote').textContent = 'Сейчас слушает: ' + (micLabel || 'микрофон по умолчанию') + '. Звук перевода идёт в очки.';
-    } catch (e) { /* ignore */ }
   }
 
   // Capture
@@ -843,10 +782,7 @@
   }
 
   // ===== Synchronous mode: Gemini Live, streaming speech to speech =====
-  // useTranslate: the live-translate model listens (translates while the person talks);
-  // otherwise the general live model translates after each phrase.
-  // speakDirect: play the listening model's own voice; otherwise the finished text is read by the female/male voice.
-  var live = { ws: null, open: false, handle: null, retries: 0, reconnecting: false, modelIdx: 0, useTranslate: true, speakDirect: false };
+  var live = { ws: null, open: false, handle: null, retries: 0, reconnecting: false, modelIdx: 0, useMirror: true };
   function isLimit(reason) { return /quota|exhaust|limit|rate|resource/i.test(reason || ''); }
   function liveSys() {
     var l = curLang();
@@ -861,9 +797,10 @@
       '- Если сказано по-русски, если речь неразборчива или это шум, молчи.';
   }
   function liveSetup() {
-    var voice = voiceMode() === 'male' ? VOICES.male : VOICES.female;
+    var voice = liveVoice();
+    if (voice === 'mirror') voice = 'Aoede'; // female fallback when the instant interpreter is at its limit
     var resume = live.handle ? { handle: live.handle } : {};
-    if (live.useTranslate) {
+    if (live.useMirror) {
       return { setup: {
         model: 'models/' + MIRROR_MODEL,
         generationConfig: { responseModalities: ['AUDIO'], translationConfig: { targetLanguageCode: 'ru', echoTargetLanguage: false } },
@@ -914,7 +851,7 @@
     for (;;) {
       try { await liveConnect(); updateHint(); return; } catch (e) {
         if (isLimit(e && e.reason)) {
-          if (live.useTranslate) { live.useTranslate = false; live.modelIdx = 0; live.handle = null; continue; }
+          if (live.useMirror) { live.useMirror = false; live.modelIdx = 0; live.handle = null; continue; }
           if (live.modelIdx < LIVE_MODELS.length - 1) { live.modelIdx++; live.handle = null; continue; }
         }
         throw e;
@@ -926,11 +863,11 @@
     live.ws = null;
     live.open = false;
     try { if (old) { old.onclose = null; old.close(); } } catch (e) { /* ignore */ }
-    if (live.useTranslate) {
-      live.useTranslate = false;
+    if (live.useMirror) {
+      live.useMirror = false;
       live.modelIdx = 0;
       live.handle = null;
-      toast('Мгновенный переводчик на лимите. Перевожу после каждой фразы.');
+      toast('Мгновенный переводчик на лимите. Переключаюсь на женский голос.');
       liveReconnect();
     } else if (live.modelIdx < LIVE_MODELS.length - 1) {
       live.modelIdx++;
@@ -986,149 +923,9 @@
   // The model sometimes writes service tags such as <no speech> or {pause}; they are not speech
   function cleanOut(t) { return (t || '').replace(/<[^>]*>|\{[^}]*\}|\[[^\]]*\]/g, '').replace(/\s+/g, ' ').trim(); }
   function liveAudio(data) {
-    var pcm = downsample16k(data, actx.sampleRate);
-    trackPitch(pcm);
     if (!live.open || !live.ws || live.ws.readyState !== 1) return;
+    var pcm = downsample16k(data, actx.sampleRate);
     live.ws.send(JSON.stringify({ realtimeInput: { audio: { data: toB64(new Uint8Array(pcm.buffer)), mimeType: 'audio/pcm;rate=16000' } } }));
-  }
-
-  // ===== Speaker gender from voice pitch (men ~85–155 Hz, women ~165–255 Hz) =====
-  var pitchLog = [], lastGender = 'female', lastSpoken = 'female';
-  function trackPitch(pcm) {
-    var n = pcm.length, e = 0, i;
-    var x = new Float32Array(n);
-    for (i = 0; i < n; i++) { x[i] = pcm[i] / 32768; e += x[i] * x[i]; }
-    if (Math.sqrt(e / n) < 0.02) return; // silence
-    var minLag = 40, maxLag = 230, best = 0, bestLag = 0, corr = new Float32Array(maxLag + 1);
-    for (var lag = minLag; lag <= maxLag; lag++) {
-      var s = 0;
-      for (i = 0; i + lag < n; i++) s += x[i] * x[i + lag];
-      corr[lag] = s;
-      if (s > best) { best = s; bestLag = lag; }
-    }
-    if (!bestLag || best / e < 0.3) return; // not voiced
-    // Guard against octave errors: prefer half the lag when it is almost as strong
-    var half = Math.round(bestLag / 2);
-    if (half >= minLag && corr[half] > 0.85 * best) bestLag = half;
-    var now = performance.now();
-    pitchLog.push({ t: now, f: 16000 / bestLag });
-    while (pitchLog.length && pitchLog[0].t < now - 15000) pitchLog.shift();
-  }
-  function pickGender() {
-    var mode = voiceMode();
-    if (mode === 'female' || mode === 'male') return mode;
-    // The translation lags the speech by a few seconds, so look at the voice from that stretch
-    var now = performance.now(), from = now - (live.useTranslate ? 5500 : 8000), to = now - (live.useTranslate ? 1500 : 300);
-    var fs = pitchLog.filter(function (p) { return p.t >= from && p.t <= to; }).map(function (p) { return p.f; }).sort(function (a, b) { return a - b; });
-    if (fs.length >= 4) lastGender = fs[fs.length >> 1] < 165 ? 'male' : 'female';
-    return lastGender;
-  }
-
-  // ===== Voices: live sessions that read the finished translation aloud =====
-  var voiceS = { female: null, male: null };
-  function voiceSetup(g) {
-    return { setup: {
-      model: 'models/' + VOICE_MODEL,
-      generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: VOICES[g] } } } },
-      systemInstruction: { parts: [{ text: VOICE_SYS }] },
-      contextWindowCompression: { slidingWindow: {} }
-    } };
-  }
-  function voiceOpen(g) {
-    var v = voiceS[g];
-    if (v && v.ws && v.ws.readyState <= 1) return v.ready;
-    v = voiceS[g] = { ws: null, ready: null, onTurn: null };
-    v.ready = new Promise(function (resolve, reject) {
-      var ws, ok = false;
-      try { ws = new WebSocket(WS_URL + encodeURIComponent(getKey())); } catch (e) { reject({ code: 'net' }); return; }
-      ws.binaryType = 'arraybuffer';
-      v.ws = ws;
-      var timer = setTimeout(function () { if (!ok) { try { ws.close(); } catch (e) { /* ignore */ } reject({ code: 'timeout' }); } }, 10000);
-      ws.onopen = function () { ws.send(JSON.stringify(voiceSetup(g))); };
-      ws.onmessage = function (ev) {
-        var msg;
-        try { msg = JSON.parse(typeof ev.data === 'string' ? ev.data : new TextDecoder().decode(ev.data)); } catch (e) { return; }
-        if (msg.setupComplete) { ok = true; clearTimeout(timer); resolve(); return; }
-        var sc = msg.serverContent;
-        if (!sc) return;
-        if (sc.modelTurn && sc.modelTurn.parts && running) {
-          sc.modelTurn.parts.forEach(function (p) {
-            if (p.inlineData && p.inlineData.data && /audio/i.test(p.inlineData.mimeType || 'audio')) {
-              var m = /rate=(\d+)/.exec(p.inlineData.mimeType || '');
-              playPcm16(p.inlineData.data, m ? +m[1] : 24000);
-            }
-          });
-        }
-        if (sc.turnComplete && v.onTurn) { var f = v.onTurn; v.onTurn = null; f(); }
-      };
-      ws.onclose = function (ev) {
-        clearTimeout(timer);
-        if (!ok) reject({ code: 'closed', reason: ev.reason });
-        if (voiceS[g] === v) voiceS[g] = null;
-        if (v.onTurn) { var f = v.onTurn; v.onTurn = null; f(); }
-      };
-      ws.onerror = function () { /* handled in onclose */ };
-    });
-    v.ready.catch(function () { /* handled where it is awaited */ });
-    return v.ready;
-  }
-  function warmVoices() {
-    var mode = voiceMode();
-    if (mode === 'auto' || mode === 'female') voiceOpen('female');
-    if (mode === 'auto' || mode === 'male') voiceOpen('male');
-  }
-  function closeVoices() {
-    ['female', 'male'].forEach(function (g) {
-      var v = voiceS[g];
-      voiceS[g] = null;
-      if (v && v.ws) { try { v.ws.onclose = null; v.ws.close(); } catch (e) { /* ignore */ } }
-    });
-  }
-
-  // Finished sentences are spoken one after another, each in the voice that matches the speaker
-  var sayQueue = [], sayBusy = false, sayBuf = '', sayTimer = null;
-  function feedSay(chunk) {
-    sayBuf += chunk;
-    var m;
-    while ((m = /^([\s\S]*?[.?!…]["»)]?)(\s+|$)/.exec(sayBuf)) && m[0].length) {
-      enqueueSay(m[1]);
-      sayBuf = sayBuf.slice(m[0].length);
-    }
-    clearTimeout(sayTimer);
-    if (cleanOut(sayBuf)) sayTimer = setTimeout(flushSay, 1200);
-  }
-  function flushSay() {
-    clearTimeout(sayTimer);
-    var t = sayBuf;
-    sayBuf = '';
-    enqueueSay(t);
-  }
-  function enqueueSay(text) {
-    var t = cleanOut(text);
-    if (!t || !running) return;
-    sayQueue.push({ text: t, gender: pickGender() });
-    pumpSay();
-  }
-  async function pumpSay() {
-    if (sayBusy || !sayQueue.length || !running) return;
-    sayBusy = true;
-    var item = sayQueue.shift();
-    lastSpoken = item.gender;
-    try {
-      await voiceOpen(item.gender);
-      var v = voiceS[item.gender];
-      if (!v || !v.ws || v.ws.readyState !== 1) throw { code: 'closed' };
-      await new Promise(function (resolve) {
-        var t = setTimeout(resolve, 15000);
-        v.onTurn = function () { clearTimeout(t); resolve(); };
-        v.ws.send(JSON.stringify({ clientContent: { turns: [{ role: 'user', parts: [{ text: item.text }] }], turnComplete: true } }));
-      });
-    } catch (e) {
-      // The voice is unavailable (limit or network): read it with the phone's own voice instead
-      if (running) await speakAsync(item.text);
-    }
-    sayBusy = false;
-    pumpSay();
   }
   // Cards: input text goes to the newest card still waiting for its translation; translation text goes to the oldest unfinished card
   function inputCard() {
@@ -1151,7 +948,7 @@
     var sc = msg.serverContent;
     if (!sc) return;
     // Instant interpreter: one continuous stream without turns; a new card starts after each finished sentence
-    if (live.useTranslate) {
+    if (live.useMirror) {
       if (sc.outputTranscription && sc.outputTranscription.text) {
         var cm = cards[cards.length - 1];
         if (!cm || cm.done) { cm = addCard('', ''); cards.push(cm); }
@@ -1160,7 +957,6 @@
         if (txt) { cm.ru.textContent = txt; cm.ru.className = 'ru'; scrollDown(); }
         if (/[.?!…]["»)]?\s*$/.test(txt)) cm.done = true;
         if (cards.length > 80) cards = cards.slice(-80);
-        if (!live.speakDirect) feedSay(sc.outputTranscription.text);
       }
     } else if (sc.inputTranscription && sc.inputTranscription.text) {
       var ci = inputCard();
@@ -1170,7 +966,7 @@
       ci.src.textContent = bad ? '' : ci.srcText.trim();
       scrollDown();
     }
-    if (!live.useTranslate && sc.outputTranscription && sc.outputTranscription.text) {
+    if (!live.useMirror && sc.outputTranscription && sc.outputTranscription.text) {
       var co = outputCard();
       co.ruText += sc.outputTranscription.text;
       var shown = cleanOut(co.ruText);
@@ -1179,10 +975,8 @@
         co.ru.className = 'ru';
         scrollDown();
       }
-      if (!live.speakDirect) feedSay(sc.outputTranscription.text);
     }
-    // The listening model's own voice plays only in "copy of the speaker's voice" mode
-    if (live.speakDirect && sc.modelTurn && sc.modelTurn.parts) {
+    if (sc.modelTurn && sc.modelTurn.parts) {
       sc.modelTurn.parts.forEach(function (p) {
         if (p.inlineData && p.inlineData.data && /audio/i.test(p.inlineData.mimeType || 'audio')) {
           var m = /rate=(\d+)/.exec(p.inlineData.mimeType || '');
@@ -1190,9 +984,8 @@
         }
       });
     }
-    if (sc.interrupted && live.speakDirect) stopPlayback();
-    if (sc.turnComplete && !live.useTranslate && !live.speakDirect) flushSay();
-    if (sc.turnComplete && !live.useTranslate) {
+    if (sc.interrupted) stopPlayback();
+    if (sc.turnComplete && !live.useMirror) {
       var c = cards.find(function (x) { return !x.done; });
       if (c) {
         c.done = true;
@@ -1332,11 +1125,7 @@
       live.handle = null;
       live.retries = 0;
       live.modelIdx = 0;
-      live.useTranslate = curLang().instant;
-      live.speakDirect = voiceMode() === 'mirror';
-      pitchLog = [];
-      sayQueue = []; sayBuf = ''; sayBusy = false;
-      if (!live.speakDirect) warmVoices();
+      live.useMirror = liveVoice() === 'mirror';
       try { await liveOpen(); } catch (e) {
         if (my !== startId) return; // stopped while connecting
         if (isLimit(e && e.reason)) {
@@ -1387,9 +1176,6 @@
     live.ws = null;
     live.open = false;
     try { if (ws) { ws.onclose = null; ws.close(); } } catch (e) { /* ignore */ }
-    closeVoices();
-    clearTimeout(sayTimer);
-    sayQueue = []; sayBuf = ''; sayBusy = false;
     stopPlayback();
     try { speechSynthesis.cancel(); } catch (e) { /* ignore */ }
     speaking = 0;
@@ -1423,7 +1209,7 @@
   });
 
   renderLangs();
-  applyVoiceMode();
+  updateHint();
   setStatus();
   updateKeyUi();
 })();
