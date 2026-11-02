@@ -136,6 +136,7 @@
       </button>
     </div>
     <div class="hint" id="hint">Синхронный перевод живым голосом</div>
+    <button class="btn primary" id="pasteKeyDock" hidden style="max-width:520px;width:100%">Вставить ключ из буфера</button>
     <div class="errbox" id="errBox" hidden role="alert">
       <p id="errText"></p>
       <div class="row">
@@ -183,6 +184,7 @@
       <label class="f">Ключ API
         <input type="password" id="key" placeholder="Вставьте ключ один раз" autocomplete="off" autocapitalize="off" spellcheck="false">
       </label>
+      <button class="btn" id="pasteKey">Вставить ключ из буфера</button>
       <div class="row">
         <button class="btn primary" id="saveKey">Сохранить</button>
         <button class="btn" id="testKey">Проверить</button>
@@ -375,6 +377,7 @@
     store('tg-gemini-key', $('key').value.trim() || null);
     $('keystate').className = 'keystate ok';
     $('keystate').textContent = 'Сохранено.';
+    updateKeyUi();
     haptic('light');
   };
   $('clearKey').onclick = function () {
@@ -382,6 +385,7 @@
     $('key').value = '';
     $('keystate').className = 'keystate';
     $('keystate').textContent = 'Ключ удалён.';
+    updateKeyUi();
   };
   $('testKey').onclick = function () {
     store('tg-gemini-key', $('key').value.trim() || null);
@@ -396,6 +400,34 @@
     });
   };
   $('model').onchange = function () { store('tg-gemini-model', $('model').value.trim() || null); };
+
+  // One-tap key setup: the key is copied from the bot's message, then pasted here
+  var KEY_RE = /^(AQ\.|AIza)[\w.\-]{20,}$/;
+  function updateKeyUi() {
+    $('pasteKeyDock').hidden = !!getKey();
+    if (!getKey()) $('hint').textContent = 'Скопируйте ключ из сообщения бота и нажмите кнопку ниже';
+    else updateHint();
+  }
+  async function pasteKey() {
+    var t = '';
+    try { t = ((await navigator.clipboard.readText()) || '').trim(); } catch (e) { t = ''; }
+    if (!t) {
+      openSheet();
+      toast('Не получилось прочитать буфер. Нажмите в поле «Ключ API» и выберите «Вставить».');
+      $('key').focus();
+      return;
+    }
+    if (!KEY_RE.test(t)) { toast('В буфере не ключ Gemini. Нажмите на ключ в сообщении бота, чтобы скопировать его.'); return; }
+    store('tg-gemini-key', t);
+    $('key').value = t;
+    $('keystate').className = 'keystate ok';
+    $('keystate').textContent = 'Ключ сохранён.';
+    updateKeyUi();
+    haptic('medium');
+    toast('Ключ сохранён. Можно нажимать на микрофон.');
+  }
+  $('pasteKey').onclick = pasteKey;
+  $('pasteKeyDock').onclick = pasteKey;
 
   function bindSelect(id, key, def, after) {
     $(id).value = load(key) || def;
@@ -1093,7 +1125,7 @@
   renderLangs();
   updateHint();
   setStatus();
-  if (!getKey()) $('hint').textContent = 'Сначала откройте настройки (шестерёнка) и вставьте ключ Gemini';
+  updateKeyUi();
 })();
 </script>
 </body>
