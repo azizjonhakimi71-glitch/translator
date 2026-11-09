@@ -805,6 +805,7 @@
     var rms = Math.sqrt(sum / data.length);
     $('mic').style.setProperty('--lvl', Math.min(1, rms * 12).toFixed(2));
     if (!running) return;
+    trackVoice(rms);
     if (engine() === 'live') liveAudio(data);
     else phraseAudio(data, rms);
   }
@@ -968,6 +969,73 @@
     if (!c) { c = addCard('', ''); cards.push(c); }
     return c;
   }
+  // ===== Guard against made-up translation in pauses =====
+  // When nobody has spoken for a while, or the same sentence comes again, the model is repeating itself
+  // (often because the microphone hears the translation or background sound). Such output is neither shown nor played.
+  var vadFloor = 0.004, lastVoiceAt = 0;
+  var STALE_MS = 3500, REPEAT_MS = 12000;
+  function trackVoice(rms) {
+    var playing = isPlaying();
+    var thr = Math.max(0.015, vadFloor * 3);
+    if (playing) thr = Math.max(thr, 0.08); // the translation itself may reach the microphone
+    if (rms > thr) {
+      if (speechIsStale()) muteRepeat = false; // talking again after a pause: whatever comes next is new
+      lastVoiceAt = performance.now();
+    } else if (!playing) vadFloor = vadFloor * 0.98 + rms * 0.02;
+  }
+  function speechIsStale() { return performance.now() - lastVoiceAt > STALE_MS; }
+  function normSentence(t) { return cleanOut(t).toLowerCase().replace(/[^a-zа-яё0-9]+/gi, ''); }
+  var recentSaid = []; // finished sentences: { n, t }
+  var seg = null;     // the sentence being received: { text, card }
+  var muteRepeat = false; // a repeated sentence is coming: its sound is not played
+  function recentMatches(n, exact) {
+    var now = performance.now();
+    recentSaid = recentSaid.filter(function (r) { return now - r.t < REPEAT_MS; }).slice(-3);
+    return recentSaid.some(function (r) { return exact ? r.n === n : r.n.indexOf(n) === 0; });
+  }
+  function showSegText(s) {
+    var txt = cleanOut(s.text);
+    if (!txt) return;
+    if (!s.card) { s.card = addCard('', ''); cards.push(s.card); }
+    s.card.ruText = s.text;
+    s.card.ru.textContent = txt;
+    s.card.ru.className = 'ru';
+    scrollDown();
+    if (cards.length > 80) cards = cards.slice(-80);
+  }
+  function dropSegCard(s) {
+    if (!s.card) return;
+    s.card.el.remove();
+    cards.splice(cards.indexOf(s.card), 1);
+    if (!$('feed').querySelector('.msg')) $('empty').hidden = false;
+  }
+  function mirrorText(chunk) {
+    if (speechIsStale()) { seg = null; return; } // nobody is talking: made up, ignore
+    if (!seg) seg = { text: '', card: null };
+    seg.text += chunk;
+    var n = normSentence(seg.text);
+    var ended = /[.?!…]["»)]?\s*$/.test(cleanOut(seg.text));
+    if (ended && n && recentMatches(n, true)) {
+      // the same sentence again: drop it and keep its sound muted
+      dropSegCard(seg);
+      muteRepeat = true;
+      seg = null;
+      return;
+    }
+    var maybeRepeat = n.length >= 4 && recentMatches(n, false);
+    muteRepeat = maybeRepeat;
+    if (!maybeRepeat || ended) showSegText(seg);
+    if (ended) {
+      if (n) recentSaid.push({ n: n, t: performance.now() });
+      if (seg.card) seg.card.done = true;
+      seg = null;
+    }
+  }
+  function mirrorAudio(b64, rate) {
+    if (speechIsStale() || muteRepeat) return;
+    playPcm16(b64, rate);
+  }
+
   function onLiveMessage(msg) {
     if (msg.sessionResumptionUpdate && msg.sessionResumptionUpdate.resumable && msg.sessionResumptionUpdate.newHandle) {
       live.handle = msg.sessionResumptionUpdate.newHandle;
@@ -977,15 +1045,7 @@
     if (!sc) return;
     // Instant interpreter: one continuous stream without turns; a new card starts after each finished sentence
     if (live.useMirror) {
-      if (sc.outputTranscription && sc.outputTranscription.text) {
-        var cm = cards[cards.length - 1];
-        if (!cm || cm.done) { cm = addCard('', ''); cards.push(cm); }
-        cm.ruText += sc.outputTranscription.text;
-        var txt = cleanOut(cm.ruText);
-        if (txt) { cm.ru.textContent = txt; cm.ru.className = 'ru'; scrollDown(); }
-        if (/[.?!…]["»)]?\s*$/.test(txt)) cm.done = true;
-        if (cards.length > 80) cards = cards.slice(-80);
-      }
+      if (sc.outputTranscription && sc.outputTranscription.text) mirrorText(sc.outputTranscription.text);
     } else if (sc.inputTranscription && sc.inputTranscription.text) {
       var ci = inputCard();
       ci.srcText += sc.inputTranscription.text;
@@ -1008,7 +1068,8 @@
       sc.modelTurn.parts.forEach(function (p) {
         if (p.inlineData && p.inlineData.data && /audio/i.test(p.inlineData.mimeType || 'audio')) {
           var m = /rate=(\d+)/.exec(p.inlineData.mimeType || '');
-          playPcm16(p.inlineData.data, m ? +m[1] : 24000);
+          if (live.useMirror) mirrorAudio(p.inlineData.data, m ? +m[1] : 24000);
+          else playPcm16(p.inlineData.data, m ? +m[1] : 24000);
         }
       });
     }
@@ -1154,6 +1215,7 @@
       live.retries = 0;
       live.modelIdx = 0;
       live.useMirror = liveVoice() === 'mirror';
+      seg = null; recentSaid = []; lastVoiceAt = 0; vadFloor = 0.004; muteRepeat = false;
       try { await liveOpen(); } catch (e) {
         if (my !== startId) return; // stopped while connecting
         if (isLimit(e && e.reason)) {
@@ -1191,6 +1253,9 @@
 
   function stop() {
     startId++;
+    seg = null;
+    recentSaid = [];
+    muteRepeat = false;
     running = false;
     forcePhrase = false;
     live.modelIdx = 0;
