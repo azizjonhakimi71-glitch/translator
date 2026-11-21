@@ -46,6 +46,7 @@
   .langs { display: flex; gap: 8px; overflow-x: auto; padding: 6px 16px 10px; scrollbar-width: none; }
   .langs::-webkit-scrollbar { display: none; }
   .chip { flex: none; font: inherit; font-size: 0.9rem; font-weight: 600; min-height: 38px; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer; }
+  .chip.swap { font-size: 1.15rem; padding: 7px 12px; }
   .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 
   .feed { flex: 1; min-height: 0; overflow-y: auto; padding: 6px 16px 12px; display: flex; flex-direction: column; gap: 10px; -webkit-overflow-scrolling: touch; }
@@ -121,7 +122,7 @@
       <b>Как пользоваться</b>
       <ol>
         <li>Подключите очки к телефону по Bluetooth.</li>
-        <li>Выберите язык собеседника вверху.</li>
+        <li>Выберите язык собеседника вверху. Кнопка ⇄ меняет направление: с русского на язык собеседника.</li>
         <li>Нажмите кнопку внизу и разрешите микрофон.</li>
         <li>Собеседник говорит, а переводчица сразу говорит по-русски в очках.</li>
       </ol>
@@ -261,16 +262,16 @@
 
   // Uzbek is the main language; the rest are picked by hand under "Другие языки"
   var LANGS = [
-    { id: 'uz', label: 'Узбекский', from: 'узбекского', where: 'на узбекском языке', script: /[ऀ-෿؀-ۿ一-鿿ışçğüöəİŞÇĞÜÖ]/ },
-    { id: 'zh', label: 'Китайский', from: 'китайского', where: 'на китайском языке' },
-    { id: 'en', label: 'Английский', from: 'английского', where: 'на английском языке' },
-    { id: 'tr', label: 'Турецкий', from: 'турецкого', where: 'на турецком языке' },
-    { id: 'tg', label: 'Таджикский', from: 'таджикского', where: 'на таджикском языке' },
-    { id: 'kk', label: 'Казахский', from: 'казахского', where: 'на казахском языке' },
-    { id: 'ky', label: 'Киргизский', from: 'киргизского', where: 'на киргизском языке' },
-    { id: 'ko', label: 'Корейский', from: 'корейского', where: 'на корейском языке' },
-    { id: 'ar', label: 'Арабский', from: 'арабского', where: 'на арабском языке' },
-    { id: 'de', label: 'Немецкий', from: 'немецкого', where: 'на немецком языке' }
+    { id: 'uz', label: 'Узбекский', lc: 'узбекский', bcp: 'uz-UZ', from: 'узбекского', where: 'на узбекском языке', script: /[ऀ-෿؀-ۿ一-鿿ışçğüöəİŞÇĞÜÖ]/ },
+    { id: 'zh', label: 'Китайский', lc: 'китайский', bcp: 'zh-CN', from: 'китайского', where: 'на китайском языке' },
+    { id: 'en', label: 'Английский', lc: 'английский', bcp: 'en-US', from: 'английского', where: 'на английском языке' },
+    { id: 'tr', label: 'Турецкий', lc: 'турецкий', bcp: 'tr-TR', from: 'турецкого', where: 'на турецком языке' },
+    { id: 'tg', label: 'Таджикский', lc: 'таджикский', bcp: 'tg-TJ', from: 'таджикского', where: 'на таджикском языке' },
+    { id: 'kk', label: 'Казахский', lc: 'казахский', bcp: 'kk-KZ', from: 'казахского', where: 'на казахском языке' },
+    { id: 'ky', label: 'Киргизский', lc: 'киргизский', bcp: 'ky-KG', from: 'киргизского', where: 'на киргизском языке' },
+    { id: 'ko', label: 'Корейский', lc: 'корейский', bcp: 'ko-KR', from: 'корейского', where: 'на корейском языке' },
+    { id: 'ar', label: 'Арабский', lc: 'арабский', bcp: 'ar-SA', from: 'арабского', where: 'на арабском языке' },
+    { id: 'de', label: 'Немецкий', lc: 'немецкий', bcp: 'de-DE', from: 'немецкого', where: 'на немецком языке' }
   ];
   var SENS = { high: 0.008, normal: 0.015, low: 0.03 };
   var DEFAULT_MODEL = 'gemini-flash-lite-latest';
@@ -280,7 +281,16 @@
   var TTS_MODEL = 'gemini-3.8-flash-lite-tts';
   var WS_URL = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=';
 
-  function store(k, v) { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { /* ignore */ } }
+  function store(k, v) {
+    try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { /* ignore */ }
+    if (k === 'tg-gemini-key') cloudKey(v);
+  }
+  // The key is also kept in the owner's Telegram cloud, so it survives when iOS clears the app's local storage
+  function cloud() { try { return inTg && tg.isVersionAtLeast && tg.isVersionAtLeast('6.9') ? tg.CloudStorage : null; } catch (e) { return null; } }
+  function cloudKey(v) {
+    var c = cloud(); if (!c) return;
+    try { if (v) c.setItem('gk', v, function () {}); else c.removeItem('gk', function () {}); } catch (e) { /* ignore */ }
+  }
   function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function getKey() { return load('tg-gemini-key') || ''; }
 
@@ -291,7 +301,8 @@
     if (!m) return;
     var k = '';
     try { k = decodeURIComponent(m[1]); } catch (e) { k = ''; }
-    if (/^(AQ\.|AIza)[\w.\-]{20,}$/.test(k)) store('tg-gemini-key', k);
+    if (/^(AQ\.|AIza)[\w.\-]{20,}$/.test(k) && k !== load('tg-gemini-key')) store('tg-gemini-key', k);
+    else if (k) cloudKey(k);
     var rest = h.replace(/(^#|&)gk=[^&]*/, '$1').replace(/^#&/, '#').replace(/&&/g, '&').replace(/^#$/, '');
     try { history.replaceState(null, '', location.pathname + location.search + rest); } catch (e) { /* ignore */ }
   })();
@@ -323,6 +334,19 @@
   var lang = load('tg-lang') || 'uz';
   if (!LANGS.some(function (l) { return l.id === lang; })) lang = 'uz';
   function curLang() { return LANGS.find(function (l) { return l.id === lang; }) || LANGS[0]; }
+  // Direction: normally the other person's language -> Russian; "rev" is Russian -> the chosen language
+  var rev = load('tg-rev') === '1';
+  function dirLabel(l) { return rev ? 'Русский → ' + l.lc : l.label + ' → русский'; }
+  function setRev(v) {
+    if (rev === v) return;
+    rev = v;
+    store('tg-rev', rev ? '1' : null);
+    recent = []; recentSaid = []; seg = null;
+    renderLangs();
+    haptic('medium');
+    toast(rev ? 'Теперь перевожу с русского на ' + curLang().lc : 'Теперь перевожу на русский');
+    if (running && engine() === 'live') { live.handle = null; liveReconnect(); }
+  }
   function setLang(id) {
     if (lang === id) return;
     lang = id;
@@ -337,16 +361,23 @@
     box.textContent = '';
     var uzb = document.createElement('button');
     uzb.className = 'chip';
-    uzb.textContent = 'Узбекский → русский';
+    uzb.textContent = dirLabel(LANGS[0]);
     uzb.setAttribute('aria-pressed', String(lang === 'uz'));
     uzb.onclick = function () { setLang('uz'); };
     var other = document.createElement('button');
     other.className = 'chip';
-    other.textContent = lang === 'uz' ? 'Другие языки ▾' : curLang().label + ' → русский ▾';
+    other.textContent = lang === 'uz' ? 'Другие языки ▾' : dirLabel(curLang()) + ' ▾';
     other.setAttribute('aria-pressed', String(lang !== 'uz'));
     other.onclick = openLangSheet;
-    box.append(uzb, other);
-    $('sub').textContent = curLang().label + ' → русский, в наушники очков';
+    var swap = document.createElement('button');
+    swap.className = 'chip swap';
+    swap.textContent = '⇄';
+    swap.title = 'Поменять направление перевода';
+    swap.setAttribute('aria-label', rev ? 'Переводить на русский' : 'Переводить с русского');
+    swap.setAttribute('aria-pressed', String(rev));
+    swap.onclick = function () { setRev(!rev); };
+    box.append(swap, uzb, other); // the swap button first, so it stays on screen when the row scrolls
+    $('sub').textContent = dirLabel(curLang()) + ', в наушники очков';
   }
   function openLangSheet() {
     var list = $('langList');
@@ -355,7 +386,7 @@
       if (l.id === 'uz') return;
       var b = document.createElement('button');
       b.className = 'btn' + (l.id === lang ? ' primary' : '');
-      b.textContent = l.label + ' → русский';
+      b.textContent = dirLabel(l);
       b.onclick = function () { setLang(l.id); closeLangSheet(); };
       list.append(b);
     });
@@ -605,8 +636,14 @@
     return new Promise(function (resolve) {
       if (!('speechSynthesis' in window) || !text) { resolve(); return; }
       var u = new SpeechSynthesisUtterance(text);
-      u.lang = 'ru-RU';
-      var v = currentVoice();
+      var v = null;
+      if (rev) {
+        u.lang = curLang().bcp;
+        v = speechSynthesis.getVoices().find(function (x) { return x.lang && x.lang.toLowerCase().indexOf(curLang().id) === 0; }) || null;
+      } else {
+        u.lang = 'ru-RU';
+        v = currentVoice();
+      }
       if (v) u.voice = v;
       u.rate = parseFloat(load('tg-rate') || '1') || 1;
       var done = false;
@@ -815,6 +852,16 @@
   function isLimit(reason) { return /quota|exhaust|limit|rate|resource/i.test(reason || ''); }
   function liveSys() {
     var l = curLang();
+    if (rev) {
+      return 'Ты профессиональная синхронная переводчица с русского языка на ' + l.lc + ' язык.\n' +
+        'Собеседник говорит по-русски. Твоя единственная задача: сразу произносить точный перевод сказанного ' + l.where + ', от первого лица говорящего, естественным живым голосом.\n' +
+        'Строгие правила:\n' +
+        '- Говори только ' + l.where + '. Не говори по-русски и ни на каком другом языке.\n' +
+        '- Произноси один перевод. Не повторяй оригинал, не давай несколько вариантов, пояснений и комментариев.\n' +
+        '- Никогда не отвечай на вопросы и не веди разговор от себя: только переводи.\n' +
+        '- Переводи полностью и точно по смыслу. Имена, числа и цены передавай точно.\n' +
+        '- Если сказано ' + l.where + ', если речь неразборчива или это шум, молчи.';
+    }
     return 'Ты профессиональная синхронная переводчица с ' + l.from + ' языка на русский язык.\n' +
       'Собеседник говорит только ' + l.where + '. Воспринимай всю речь, которую слышишь, как речь ' + l.where + ', даже если какие-то слова похожи на другой язык.\n' +
       'Твоя единственная задача: сразу произносить точный перевод сказанного на русский язык, от первого лица говорящего, естественным живым голосом.\n' +
@@ -832,7 +879,7 @@
     if (live.useMirror) {
       return { setup: {
         model: 'models/' + MIRROR_MODEL,
-        generationConfig: { responseModalities: ['AUDIO'], translationConfig: { targetLanguageCode: 'ru', echoTargetLanguage: false } },
+        generationConfig: { responseModalities: ['AUDIO'], translationConfig: { targetLanguageCode: rev ? curLang().id : 'ru', echoTargetLanguage: false } },
         inputAudioTranscription: {}, outputAudioTranscription: {}, sessionResumption: resume
       } };
     }
@@ -984,7 +1031,7 @@
     } else if (!playing) vadFloor = vadFloor * 0.98 + rms * 0.02;
   }
   function speechIsStale() { return performance.now() - lastVoiceAt > STALE_MS; }
-  function normSentence(t) { return cleanOut(t).toLowerCase().replace(/[^a-zа-яё0-9]+/gi, ''); }
+  function normSentence(t) { return cleanOut(t).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ''); }
   var recentSaid = []; // finished sentences: { n, t }
   var seg = null;     // the sentence being received: { text, card }
   var muteRepeat = false; // a repeated sentence is coming: its sound is not played
@@ -1014,7 +1061,7 @@
     if (!seg) seg = { text: '', card: null };
     seg.text += chunk;
     var n = normSentence(seg.text);
-    var ended = /[.?!…]["»)]?\s*$/.test(cleanOut(seg.text));
+    var ended = /[.?!…。！？؟]["»”)]?\s*$/.test(cleanOut(seg.text));
     if (ended && n && recentMatches(n, true)) {
       // the same sentence again: drop it and keep its sound muted
       dropSegCard(seg);
@@ -1050,7 +1097,7 @@
       var ci = inputCard();
       ci.srcText += sc.inputTranscription.text;
       // Speech recognition sometimes writes Uzbek in a foreign script; show the original only when it looks right
-      var bad = curLang().script && curLang().script.test(ci.srcText);
+      var bad = !rev && curLang().script && curLang().script.test(ci.srcText);
       ci.src.textContent = bad ? '' : ci.srcText.trim();
       scrollDown();
     }
@@ -1133,10 +1180,15 @@
   }
   async function translateAudio(b64) {
     var ctxText = recent.length ? '\nПредыдущие фразы разговора (только для контекста):\n' + recent.join('\n') : '';
-    var prompt = 'На аудио короткая фраза живого разговора ' + curLang().where + '.\n' +
-      '1. Запиши точно, что сказано, на языке оригинала (поле src).\n' +
-      '2. Переведи на естественный разговорный русский, по смыслу и коротко, как живой переводчик (поле ru). Имена, числа и цены передавай точно.\n' +
-      'Если на аудио только шум или речь неразборчива, верни пустые строки. Если сказано по-русски, верни ru пустым.' + ctxText + '\n' +
+    var prompt = (rev
+      ? 'На аудио короткая фраза живого разговора на русском языке.\n' +
+        '1. Запиши точно, что сказано, по-русски (поле src).\n' +
+        '2. Переведи на ' + curLang().lc + ' язык, естественно и по смыслу, как живой переводчик (поле ru). Имена, числа и цены передавай точно.\n' +
+        'Если на аудио только шум или речь неразборчива, верни пустые строки. Если сказано ' + curLang().where + ', верни ru пустым.'
+      : 'На аудио короткая фраза живого разговора ' + curLang().where + '.\n' +
+        '1. Запиши точно, что сказано, на языке оригинала (поле src).\n' +
+        '2. Переведи на естественный разговорный русский, по смыслу и коротко, как живой переводчик (поле ru). Имена, числа и цены передавай точно.\n' +
+        'Если на аудио только шум или речь неразборчива, верни пустые строки. Если сказано по-русски, верни ru пустым.') + ctxText + '\n' +
       'Ответ строго JSON: {"src": "...", "ru": "..."}';
     var t = await gemini([{ text: prompt }, { inlineData: { mimeType: 'audio/wav', data: b64 } }], true);
     var o;
