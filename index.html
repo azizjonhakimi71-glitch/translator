@@ -271,8 +271,13 @@
     { id: 'ky', label: 'Киргизский', lc: 'киргизский', bcp: 'ky-KG', from: 'киргизского', where: 'на киргизском языке' },
     { id: 'ko', label: 'Корейский', lc: 'корейский', bcp: 'ko-KR', from: 'корейского', where: 'на корейском языке' },
     { id: 'ar', label: 'Арабский', lc: 'арабский', bcp: 'ar-SA', from: 'арабского', where: 'на арабском языке' },
-    { id: 'de', label: 'Немецкий', lc: 'немецкий', bcp: 'de-DE', from: 'немецкого', where: 'на немецком языке' }
+    { id: 'de', label: 'Немецкий', lc: 'немецкий', bcp: 'de-DE', from: 'немецкого', where: 'на немецком языке' },
+    // A pair without Russian: Uzbek <-> Tajik (the ⇄ button turns it into Tajik -> Uzbek)
+    { id: 'uz-tg', code: 'uz', label: 'Узбекский', lc: 'узбекский', bcp: 'uz-UZ', from: 'узбекского', where: 'на узбекском языке', script: /[ऀ-෿؀-ۿ一-鿿ışçğüöəİŞÇĞÜÖ]/,
+      pair: { code: 'tg', label: 'Таджикский', lc: 'таджикский', bcp: 'tg-TJ', from: 'таджикского', where: 'на таджикском языке' } }
   ];
+  var RU = { code: 'ru', label: 'Русский', lc: 'русский', bcp: 'ru-RU', from: 'русского', where: 'на русском языке' };
+  function langCode(l) { return l.code || l.id; }
   var SENS = { high: 0.008, normal: 0.015, low: 0.03 };
   var DEFAULT_MODEL = 'gemini-flash-lite-latest';
   // Free-tier limits are per model, so when one hits its limit the next one takes over
@@ -336,7 +341,10 @@
   function curLang() { return LANGS.find(function (l) { return l.id === lang; }) || LANGS[0]; }
   // Direction: normally the other person's language -> Russian; "rev" is Russian -> the chosen language
   var rev = load('tg-rev') === '1';
-  function dirLabel(l) { return rev ? 'Русский → ' + l.lc : l.label + ' → русский'; }
+  // Who speaks (source) and what the listener hears (target); the other side is Russian unless the entry is a pair
+  function srcOf(l) { return rev ? (l.pair || RU) : l; }
+  function dstOf(l) { return rev ? l : (l.pair || RU); }
+  function dirLabel(l) { return srcOf(l).label + ' → ' + dstOf(l).lc; }
   function setRev(v) {
     if (rev === v) return;
     rev = v;
@@ -344,7 +352,7 @@
     recent = []; recentSaid = []; seg = null;
     renderLangs();
     haptic('medium');
-    toast(rev ? 'Теперь перевожу с русского на ' + curLang().lc : 'Теперь перевожу на русский');
+    toast('Теперь перевожу: ' + dirLabel(curLang()));
     if (running && engine() === 'live') { live.handle = null; liveReconnect(); }
   }
   function setLang(id) {
@@ -637,9 +645,10 @@
       if (!('speechSynthesis' in window) || !text) { resolve(); return; }
       var u = new SpeechSynthesisUtterance(text);
       var v = null;
-      if (rev) {
-        u.lang = curLang().bcp;
-        v = speechSynthesis.getVoices().find(function (x) { return x.lang && x.lang.toLowerCase().indexOf(curLang().id) === 0; }) || null;
+      var dst = dstOf(curLang());
+      if (dst !== RU) {
+        u.lang = dst.bcp;
+        v = speechSynthesis.getVoices().find(function (x) { return x.lang && x.lang.toLowerCase().indexOf(langCode(dst)) === 0; }) || null;
       } else {
         u.lang = 'ru-RU';
         v = currentVoice();
@@ -852,6 +861,17 @@
   function isLimit(reason) { return /quota|exhaust|limit|rate|resource/i.test(reason || ''); }
   function liveSys() {
     var l = curLang();
+    if (l.pair) {
+      var s = srcOf(l), d = dstOf(l);
+      return 'Ты профессиональная синхронная переводчица с ' + s.from + ' языка на ' + d.lc + ' язык.\n' +
+        'Собеседник говорит ' + s.where + '. Твоя единственная задача: сразу произносить точный перевод сказанного ' + d.where + ', от первого лица говорящего, естественным живым голосом.\n' +
+        'Строгие правила:\n' +
+        '- Говори только ' + d.where + '. Не говори ни на каком другом языке.\n' +
+        '- Произноси один перевод. Не повторяй оригинал, не давай несколько вариантов, пояснений и комментариев.\n' +
+        '- Никогда не отвечай на вопросы и не веди разговор от себя: только переводи.\n' +
+        '- Переводи полностью и точно по смыслу. Имена, числа и цены передавай точно.\n' +
+        '- Если сказано ' + d.where + ', если речь неразборчива или это шум, молчи.';
+    }
     if (rev) {
       return 'Ты профессиональная синхронная переводчица с русского языка на ' + l.lc + ' язык.\n' +
         'Собеседник говорит по-русски. Твоя единственная задача: сразу произносить точный перевод сказанного ' + l.where + ', от первого лица говорящего, естественным живым голосом.\n' +
@@ -879,7 +899,7 @@
     if (live.useMirror) {
       return { setup: {
         model: 'models/' + MIRROR_MODEL,
-        generationConfig: { responseModalities: ['AUDIO'], translationConfig: { targetLanguageCode: rev ? curLang().id : 'ru', echoTargetLanguage: false } },
+        generationConfig: { responseModalities: ['AUDIO'], translationConfig: { targetLanguageCode: langCode(dstOf(curLang())), echoTargetLanguage: false } },
         inputAudioTranscription: {}, outputAudioTranscription: {}, sessionResumption: resume
       } };
     }
@@ -1180,7 +1200,13 @@
   }
   async function translateAudio(b64) {
     var ctxText = recent.length ? '\nПредыдущие фразы разговора (только для контекста):\n' + recent.join('\n') : '';
-    var prompt = (rev
+    var ps = srcOf(curLang()), pd = dstOf(curLang());
+    var prompt = (curLang().pair
+      ? 'На аудио короткая фраза живого разговора ' + ps.where + '.\n' +
+        '1. Запиши точно, что сказано, на языке оригинала (поле src).\n' +
+        '2. Переведи на ' + pd.lc + ' язык, естественно и по смыслу, как живой переводчик (поле ru). Имена, числа и цены передавай точно.\n' +
+        'Если на аудио только шум или речь неразборчива, верни пустые строки. Если сказано ' + pd.where + ', верни ru пустым.'
+      : rev
       ? 'На аудио короткая фраза живого разговора на русском языке.\n' +
         '1. Запиши точно, что сказано, по-русски (поле src).\n' +
         '2. Переведи на ' + curLang().lc + ' язык, естественно и по смыслу, как живой переводчик (поле ru). Имена, числа и цены передавай точно.\n' +
